@@ -1,1 +1,1 @@
-export const FEATURES = { chat: false, projects: false, graph: true, compare: true }
+export const FEATURES = { chat: false, projects: false, graph: false, compare: false }

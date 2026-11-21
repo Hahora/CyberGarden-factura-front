@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FEATURES } from '../features'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from './Icon.vue'
@@ -46,7 +47,7 @@ const tabs = computed(() => [
   { id: 'val' as Tab, label: 'Значения', n: results.value.length, tip: '' },
   { id: 'cond' as Tab, label: 'Условия', n: 0, tip: 'Конфигурации, датасеты и задачи, эксперименты' },
   { id: 'iss' as Tab, label: 'Замечания', n: openCount.value, tip: openCount.value ? 'Нужно проверить' : '' },
-  { id: 'links' as Tab, label: 'Связи', n: 0, tip: '' },
+  ...(FEATURES.graph ? [{ id: 'links' as Tab, label: 'Связи', n: 0, tip: '' }] : []),
 ])
 const count = (n: number, f: [string, string, string]) => `${fmtInt(n)} ${plural(n, f)}`
 

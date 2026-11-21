@@ -10,7 +10,7 @@ export const DATA_TABS = [
   { to: '/facts', label: 'Таблица', icon: 'table' },
   { to: '/checks', label: 'Проверки', icon: 'shield' },
   ...(FEATURES.compare ? [{ to: '/compare', label: 'Сравнение', icon: 'columns' }] : []),
-  { to: '/graph', label: 'Связи', icon: 'graph' },
+  ...(FEATURES.graph ? [{ to: '/graph', label: 'Связи', icon: 'graph' }] : []),
   { to: '/passport', label: 'Паспорт', icon: 'book' },
   { to: '/export', label: 'Экспорт', icon: 'export' },
 ] as const

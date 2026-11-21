@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FEATURES } from '../features'
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '../components/Icon.vue'
@@ -78,7 +79,7 @@ const tabs = computed(() => [
   { id: 'val' as Tab, label: 'Значения', n: results.value.length, tip: '' },
   { id: 'dev' as Tab, label: 'Прибор', n: 0, tip: '' },
   { id: 'iss' as Tab, label: 'Замечания', n: openCount.value, tip: openCount.value ? 'Нужно проверить' : '' },
-  { id: 'links' as Tab, label: 'Связи', n: 0, tip: '' },
+  ...(FEATURES.graph ? [{ id: 'links' as Tab, label: 'Связи', n: 0, tip: '' }] : []),
 ])
 const linkMods = import.meta.glob<{ default: Component }>('../components/CaseLinks.vue')
 const linkLoader = Object.values(linkMods)[0]

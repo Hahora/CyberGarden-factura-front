@@ -12,6 +12,7 @@ export const DATA_TABS = [
   ...(FEATURES.compare ? [{ to: '/compare', label: 'Сравнение', icon: 'columns' }] : []),
   ...(FEATURES.graph ? [{ to: '/graph', label: 'Связи', icon: 'graph' }] : []),
   { to: '/passport', label: 'Паспорт', icon: 'book' },
+  ...(isApi ? [{ to: '/citations', label: 'Цитирования', icon: 'quote' }] : []),
   { to: '/export', label: 'Экспорт', icon: 'export' },
 ] as const
 export const DATA_HIDDEN = [

@@ -12,11 +12,40 @@ const scrolled = ref(false)
 const light = ref(false)
 const current = ref('')
 const sheet = ref(false)
+const demo = ref(false)
+const demoVideo = ref<HTMLVideoElement | null>(null)
+function openDemo() {
+  sheet.value = false
+  demo.value = true
+  requestAnimationFrame(() => { void demoVideo.value?.play().catch(() => {}) })
+}
+function closeDemo() {
+  demoVideo.value?.pause()
+  demo.value = false
+}
+const AI = [
+  { i: 'app-icon', t: 'Вопросы обычными словами', d: '«Лучший КПД перовскитов со слоем SnO2», «о чём статья D001», «почему не сходится КПД»' },
+  { i: 'page-table', t: 'Каждое число со сноской', d: 'Ответ ссылается на страницу и строку. Число, которое не подтверждается данными, в ответ не попадает' },
+  { i: 'step-1', t: 'Цитирования и похожие работы', d: 'Находит в открытых научных базах, кто цитирует статью и что почитать рядом' },
+  { i: 'check-tile', t: 'Исправить в один клик', d: 'У замечания сервис сам предлагает правку: сдвиг запятой, пересчёт КПД, обмен значений' },
+  { i: 'logo-3d', t: 'Чаты по разбору', d: 'Сколько угодно разговоров, к любому можно вернуться. Ответ дописывается, даже если закрыть вкладку' },
+  { i: 'page-chart', t: 'Уточняет, если не понял', d: 'Если вопрос неоднозначный — переспросит и предложит варианты кнопками' },
+]
+const ICO: Record<string, string> = {"app-icon": "<path d=\"M20 11.5c0 3.87-3.58 7-8 7-1.2 0-2.34-.2-3.36-.55L4 19.5l1.3-3.6C4.5 14.7 4 13.14 4 11.5c0-3.87 3.58-7 8-7s8 3.13 8 7z\"/><path d=\"M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01\"/>", "page-table": "<path d=\"M7 3.5h7l5 5v12H7z\"/><path d=\"M14 3.5v5h5\"/><path d=\"M10 13h6M10 16.5h4\"/>", "step-1": "<path d=\"M4.5 5.5h6a2 2 0 0 1 2 2v12a1.5 1.5 0 0 0-1.5-1.5h-6.5z\"/><path d=\"M19.5 5.5h-6a2 2 0 0 0-2 2v12a1.5 1.5 0 0 1 1.5-1.5h6.5z\"/>", "check-tile": "<path d=\"M4 20.5h5\"/><path d=\"M14.5 5.5l4 4-8.5 8.5-4.5 1 1-4.5z\"/>", "logo-3d": "<path d=\"M3.5 12a8.5 8.5 0 1 0 2.6-6.1\"/><path d=\"M3.5 4.5v4h4\"/><path d=\"M12 7.5V12l3 2\"/>", "page-chart": "<path d=\"M9.2 9.3a2.9 2.9 0 1 1 3.9 2.7c-.7.3-1.1.9-1.1 1.6v.6\"/><path d=\"M12 17.5h.01\"/><path d=\"M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z\"/>", "icon-text-table": "<path d=\"M5.5 4.5h13v15h-13z\"/><path d=\"M9 9h6M9 12.5h6M9 16h3\"/><path d=\"M16 16l1.5 1.5 3-3\"/>", "icon-calc": "<path d=\"M5 4.5h14v15H5z\"/><path d=\"M8.5 8.5h7\"/><path d=\"M8.5 12.5h.01M12 12.5h.01M15.5 12.5h.01M8.5 16h.01M12 16h.01M15.5 16h.01\"/>", "step-2": "<path d=\"M4 7.5h16v12H4z\"/><path d=\"M4 7.5l2-3h12l2 3\"/><path d=\"M12 11v5M9.5 13.5 12 16l2.5-2.5\"/>", "icon-flask": "<path d=\"M9.5 3.5h5\"/><path d=\"M10.5 3.5v5.2L5 18.4A1.5 1.5 0 0 0 6.3 20.5h11.4a1.5 1.5 0 0 0 1.3-2.1l-5.5-9.7V3.5\"/><path d=\"M7.5 14.5h9\"/>", "icon-record": "<path d=\"M12 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z\"/><path d=\"M5.5 20c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5\"/>", "page-line": "<path d=\"M5 4.5h10.5a2 2 0 0 1 2 2V20H7a2 2 0 0 1-2-2z\"/><path d=\"M5 18a2 2 0 0 1 2-2h10.5\"/><path d=\"M9 8.5h5M9 11.5h3\"/>"}
+const WHY = [
+  { n: '01', i: 'icon-text-table', t: 'Доказательство у каждого числа', d: 'Страница, дословная цитата и подсветка в PDF — не нужно верить на слово' },
+  { n: '02', i: 'icon-calc', t: 'Проверки по физике', d: 'КПД против Voc·Jsc·FF, Voc выше ширины запрещённой зоны, путаница долей и процентов' },
+  { n: '03', i: 'step-2', t: 'Сразу готово к сдаче', d: '7 таблиц точно по шаблону кейса и паспорт набора, проверенные официальным скриптом' },
+  { n: '04', i: 'icon-flask', t: 'Две области и сканы', d: 'Солнечные элементы и RAG, сканы без текстового слоя распознаются с оценкой качества' },
+  { n: '05', i: 'icon-record', t: 'Человек решает', d: 'Принять, исправить, отклонить — каждая правка в журнале и отменяется' },
+  { n: '06', i: 'page-line', t: 'Всё объяснено', d: 'Паспорт описывает поля, единицы, правила проверок и критерии отбора статей' },
+]
 
 const NAV = [
   { id: 'product', label: 'Продукт' },
   { id: 'how', label: 'Как это работает' },
   { id: 'checks', label: 'Проверки' },
+  { id: 'ai', label: 'Чат со статьями' },
   { id: 'results', label: 'Результаты' },
 ]
 
@@ -138,7 +167,7 @@ function countUp(i: number) {
 
 let io: IntersectionObserver | null = null
 let timer = 0
-const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') sheet.value = false }
+const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { sheet.value = false; if (demo.value) closeDemo() } }
 
 onMounted(() => {
   const el = root.value!
@@ -214,7 +243,7 @@ onBeforeUnmount(() => {
     </header>
     <div v-if="sheet" class="sheet" role="dialog" aria-modal="true" aria-label="Меню" @click.self="sheet = false">
       <div class="sheet__card">
-        <button class="sheet__x" type="button" aria-label="Закрыть" @click="sheet = false">×</button>
+        <button class="sheet__x" type="button" aria-label="Закрыть" @click="sheet = false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
         <a v-for="n in NAV" :key="n.id" :href="'#' + n.id" @click.prevent="go(n.id)">{{ n.label }}</a>
         <a v-if="signed" class="btn" href="/app" @click.prevent="toApp">Открыть приложение · {{ state.profile.name }}</a>
         <template v-else>
@@ -233,7 +262,7 @@ onBeforeUnmount(() => {
             <p class="hero__lead">Загрузите научные PDF — получите таблицы значений со ссылкой на место в статье. Солнечные элементы и RAG</p>
             <div class="hero__btns">
               <a class="btn btn--white" href="/app" @click.prevent="upload">Загрузить PDF</a>
-              <a class="btn btn--glass" href="#product" @click.prevent="go('product')"><span class="play" aria-hidden="true" />Смотреть демо</a>
+              <a class="btn btn--glass" href="/landing/demo.mp4" @click.prevent="openDemo"><span class="play" aria-hidden="true" />Смотреть демо</a>
             </div>
           </div>
 
@@ -354,6 +383,38 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
+      <section id="ai" class="sec ai" data-tone="light">
+        <div class="wrap ai__in">
+          <div class="ai__text">
+            <h2 class="h2" data-reveal style="--d: .08s">Поговорите со своими статьями</h2>
+            <p class="ai__lead" data-reveal style="--d: .12s">Загрузили PDF — и можно спрашивать о них что угодно. Нейросеть читает таблицы и текст ваших статей и отвечает со ссылками на страницы.</p>
+            <ul class="ai__list">
+              <li v-for="(f, i) in AI" :key="f.t" data-reveal :style="{ '--d': 0.12 + i * 0.07 + 's' }"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" v-html="ICO[f.i]" /></span><div><b>{{ f.t }}</b><span>{{ f.d }}</span></div></li>
+            </ul>
+          </div>
+          <div class="chat" data-reveal="scale" style="--d: .2s" role="img" aria-label="Пример диалога с нейросетью: ответ со сносками и список цитирующих работ">
+            <p class="chat__q">Кто цитирует статью D003?</p>
+            <div class="chat__steps"><span>✓ Нашла статью в научной базе</span><span>✓ Отобрала самые цитируемые работы</span></div>
+            <p class="chat__a">Статью D003 цитируют 23 работы<sup>1</sup>. Самая цитируемая — о легировании Spiro-OMeTAD<sup>2</sup>, рядом обзор транспортных слоёв из оксидов металлов<sup>3</sup>.</p>
+            <div class="chat__src">
+              <p class="chat__h">Цитирования <span>не входят в набор для сдачи</span></p>
+              <div class="chat__w"><small>цитирует статью · 2022 · 58 цитирований</small><b>3-Chloroperoxybenzoic acid doping spiro-OMeTAD for improving the performance of perovskite solar cells</b><span>Q. H. Chen, J. Wu и др. · Chemical Engineering Journal</span></div>
+              <div class="chat__w"><small>цитирует статью · 2023 · 36 цитирований</small><b>Applications of Metal Oxide Charge Transport Layers in Perovskite Solar Cells</b><span>J. Liu, S. Li, A. Mei и др. · Small Science</span></div>
+            </div>
+            <div class="chat__next"><span>Почему КПД D003 не сходится?</span><span>Похожие работы</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="why" class="sec why" data-tone="light">
+        <div class="wrap">
+          <h2 class="h2" data-reveal style="--d: .08s">Не просто вытаскивает числа</h2>
+          <div class="why__grid">
+            <article v-for="(w, i) in WHY" :key="w.n" class="why__c" data-reveal :style="{ '--d': i * 0.07 + 's' }"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" v-html="ICO[w.i]" /></span><span class="why__n">{{ w.n }}</span><h3>{{ w.t }}</h3><p>{{ w.d }}</p></article>
+          </div>
+        </div>
+      </section>
+
       <section id="results" class="sec results" data-tone="light">
         <div class="wrap">
           <div class="stats">
@@ -382,7 +443,18 @@ onBeforeUnmount(() => {
         <small>© 2026 Фактура AI</small>
       </div>
     </footer>
-  </div>
+  
+    <Teleport to="body">
+      <Transition name="demo">
+        <div v-if="demo" class="demo" role="dialog" aria-modal="true" aria-label="Демо Фактуры" @click.self="closeDemo">
+          <div class="demo__box">
+            <button class="demo__x" type="button" aria-label="Закрыть видео" @click="closeDemo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
+            <video ref="demoVideo" class="demo__v" src="/landing/demo.mp4" poster="/landing/demo-poster.webp" controls playsinline preload="metadata" />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+</div>
 </template>
 
 <style scoped>
@@ -636,7 +708,7 @@ onBeforeUnmount(() => {
 .sheet__card a { display: flex; align-items: center; height: 56px; padding: 0 10px; font: 600 20px var(--font); border-radius: 14px; }
 .sheet__card a:active { background: #f2f3f5; }
 .sheet__card .btn { width: 100%; justify-content: center; margin-top: 10px; background: var(--ink); color: #fff !important; }
-.sheet__x { position: absolute; right: 12px; top: 12px; width: 46px; height: 46px; border: 0; border-radius: 50%; background: #f2f3f5; font-size: 24px; cursor: pointer; }
+.sheet__x { position: absolute; right: 12px; top: 12px; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 0; border-radius: 50%; background: #f2f3f5; color: var(--ink); cursor: pointer; }
 @media (max-width: 1080px) {
   .nav__links { display: none; }
   .nav__burger { display: grid; place-items: center; order: 3; }
@@ -709,5 +781,61 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) {
   .lp *, .lp *::before, .lp *::after { animation: none !important; transition: none !important; }
   [data-reveal], .h2[data-reveal], .step .step__img, .step .step__n, .clist li img, .cta .cta__img, .L .E, .hero__lead, .hero__btns, .hero__chips, .hero h1 .ln > span, .hero__bg img, .app, .vt__r, .vt__rule { opacity: 1 !important; transform: none !important; filter: none !important; clip-path: none !important; }
+}
+
+.ai { padding: clamp(72px, 8vw, 120px) 0; background: #fff; }
+.ai__in { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(40px, 5vw, 80px); align-items: center; }
+.ai__lead { margin: 20px 0 0; max-width: 34em; font-size: clamp(17px, 1.4vw, 20px); line-height: 1.5; color: var(--ink-2); }
+.ai__list { list-style: none; margin: 36px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 28px; }
+.ai__list li { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 16px; align-items: start; }
+.ico { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: linear-gradient(180deg, #eef3ff, #f8faff); box-shadow: inset 0 0 0 1px rgba(47, 107, 255, .16); color: var(--blue); }
+.ico svg { width: 24px; height: 24px; }
+.ai__list li div { display: grid; gap: 6px; }
+.ai__list b { font-size: 19px; font-weight: 650; letter-spacing: -.01em; }
+.ai__list span { font-size: 15.5px; line-height: 1.5; color: var(--ink-2); }
+.chat { display: grid; gap: 16px; padding: clamp(22px, 3vw, 36px); border-radius: var(--r); background: var(--light); box-shadow: 0 0 0 1px var(--line), 0 50px 100px -50px rgba(20, 30, 60, .35); }
+.chat__q { justify-self: end; max-width: 85%; margin: 0; padding: 12px 18px; border-radius: 20px; background: #e4e5e9; font-size: 17px; }
+.chat__steps { display: grid; gap: 4px; font-size: 14px; color: var(--ink-3); }
+.chat__a { margin: 0; font-size: 17px; line-height: 1.55; }
+.chat__a sup { display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin: 0 2px; border-radius: 6px; background: #e4e5e9; font-size: 12px; font-weight: 600; vertical-align: 3px; }
+.chat__src { display: grid; gap: 14px; padding: 18px 20px; border-radius: 18px; background: #fff; box-shadow: 0 0 0 1px var(--line); }
+.chat__h { margin: 0; font-size: 15px; font-weight: 650; }
+.chat__h span { margin-left: 8px; font-weight: 400; color: var(--ink-3); }
+.chat__w { display: grid; gap: 3px; }
+.chat__w small { font-size: 13px; color: var(--ink-3); }
+.chat__w b { font-size: 15px; font-weight: 550; line-height: 1.35; }
+.chat__w span { font-size: 13px; color: var(--ink-2); }
+.chat__next { display: flex; flex-wrap: wrap; gap: 8px; }
+.chat__next span { padding: 8px 14px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--line); background: #fff; font-size: 14px; }
+.why { padding-top: clamp(72px, 8vw, 120px); padding-bottom: 0; background: var(--light); }
+.why__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-top: clamp(40px, 5vw, 64px); }
+.why__c { position: relative; display: grid; align-content: start; gap: 10px; padding: 28px 30px 32px; overflow: hidden; border-radius: var(--r); background: #fff; box-shadow: 0 0 0 1px rgba(11, 11, 12, .04), 0 30px 60px -40px rgba(20, 30, 60, .3); }
+.why__n { position: absolute; top: 30px; right: 30px; font: 600 14px/1 var(--font); color: var(--ink-3); letter-spacing: .08em; }
+.why__c .ico { margin-bottom: 8px; transition: transform .5s var(--ease); }
+.why__c.in:hover .ico { transform: translateY(-3px); }
+.why__c h3 { margin: 0; font: 700 22px/1.15 var(--font); letter-spacing: -.02em; }
+.why__c p { margin: 0; font-size: 16px; line-height: 1.5; color: var(--ink-2); }
+.demo { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: rgba(5, 6, 8, .78); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.demo__box { position: relative; width: min(1200px, 100%); }
+.demo__v { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 20px; background: #000; box-shadow: 0 40px 120px rgba(0, 0, 0, .6); }
+.demo__x { position: absolute; top: -56px; right: 0; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .14); color: #fff; cursor: pointer; transition: background .2s; }
+.demo__x svg { display: block; }
+.demo__x:hover { background: rgba(255, 255, 255, .26); }
+.demo-enter-active, .demo-leave-active { transition: opacity .3s ease; }
+.demo-enter-active .demo__box, .demo-leave-active .demo__box { transition: transform .4s cubic-bezier(.2, .8, .2, 1); }
+.demo-enter-from, .demo-leave-to { opacity: 0; }
+.demo-enter-from .demo__box, .demo-leave-to .demo__box { transform: scale(.94) translateY(20px); }
+@media (max-width: 980px) {
+  .ai__in { grid-template-columns: minmax(0, 1fr); }
+  .why__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .ai__list { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .why__grid { grid-template-columns: minmax(0, 1fr); }
+  .why__c { padding: 22px 22px 24px; }
+  .chat__q, .chat__a { font-size: 16px; }
+  .demo { padding: 12px; }
+  .demo__v { border-radius: 12px; }
+  .demo__x { top: -50px; right: 4px; }
 }
 </style>

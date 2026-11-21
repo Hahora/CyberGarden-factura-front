@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Hahora/CyberGarden-factura-front/blob/main/public/landing/demo.mp4"><b>▶ Демо-видео</b></a> ·
   <a href="https://factura.t1nnld.com"><b>Открыть сайт</b></a> ·
   <a href="https://github.com/Nomadd-yas/faktura-ai">Бэкенд</a> ·
   <a href="#скриншоты">Скриншоты</a> ·
@@ -22,6 +23,13 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white">
   <img alt="Vite" src="https://img.shields.io/badge/Vite-7-646cff?logo=vite&logoColor=white">
   <img alt="pdf.js" src="https://img.shields.io/badge/pdf.js-PDF%20viewer-e34f26">
+</p>
+
+<h2 align="center">Демо</h2>
+
+<p align="center">
+  <a href="https://github.com/Hahora/CyberGarden-factura-front/blob/main/public/landing/demo.mp4"><img src=".github/screenshots/demo-poster.jpg" alt="Демо-видео Фактуры AI: загрузка, разбор, цитата в PDF, проверки, чат со статьями, экспорт" width="820"></a><br>
+  <sub>Минута о том, как работает Фактура. Видео также открывается на сайте по кнопке «Смотреть демо».</sub>
 </p>
 
 <table>
@@ -78,6 +86,7 @@
 - «Проверки» — замечания по группам: числа не сходятся (КПД ≠ Voc·Jsc·FF), противоречия в статье, единицы и округление, условия измерения.
 - «Паспорт» — поля, типы, единицы, правила проверок, нормализация и критерии отбора; с бэком — тот же паспорт, что лежит в ZIP.
 - «Экспорт» — предпросмотр всех таблиц, ZIP, JSON и Excel, набор по всем разборам сразу.
+- «Цитирования» — кто цитирует статьи разбора и связанные работы из открытых научных баз, плюс всё, что нейросеть нашла в чатах. Фильтры по типу и статье; в набор для сдачи не входят.
 
 ### Набор для сдачи
 - ZIP с 7 CSV точно по шаблону кейса, `PASSPORT.md` и `passport.json`.

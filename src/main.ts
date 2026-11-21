@@ -34,6 +34,7 @@ const router = createRouter({
     { path: '/history', component: () => import('./views/HistoryView.vue'), meta: { title: 'Журнал правок' } },
     { path: '/export', component: () => import('./views/ExportView.vue'), meta: { title: 'Экспорт', download: true } },
     { path: '/passport', component: () => import('./views/PassportView.vue') },
+    { path: '/citations', component: () => import('./views/CitationsView.vue'), meta: { title: 'Цитирования' } },
     { path: '/settings', component: () => import('./views/SettingsView.vue') },
     { path: '/profile', redirect: '/settings?section=profile' },
     { path: '/:rest(.*)*', redirect: '/app' },

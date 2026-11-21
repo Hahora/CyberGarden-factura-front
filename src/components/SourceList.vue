@@ -7,7 +7,7 @@ import type { Source } from '../api/chat'
 
 const props = withDefaults(defineProps<{ sources: Source[]; full?: boolean; limit?: number }>(), { full: false, limit: 4 })
 
-const REL: Record<string, string> = { this: 'эта статья', related: 'связанная работа', cites: 'цитирует статью', search: 'найдено по запросу' }
+const REL: Record<string, string> = { this: 'сама статья', related: 'связанная работа', cites: 'цитирует статью', search: 'найдено в чате' }
 const shown = computed(() => (props.full ? props.sources : props.sources.slice(0, props.limit)))
 const who = (s: Source) => {
   const a = s.authors ?? []
@@ -18,9 +18,9 @@ const link = (s: Source) => s.url || (s.doi ? `https://doi.org/${s.doi}` : `http
 
 <template>
   <ul class="src" :class="{ 'is-full': full }" role="list">
-    <li v-for="s in shown" :key="s.openalex_id" class="src__i" :class="{ card: full }">
+    <li v-for="s in shown" :key="s.openalex_id + ((s as { pid?: string | null }).pid ?? '')" class="src__i" :class="{ card: full }">
       <div class="src__top">
-        <span v-if="s.relation" class="src__rel">{{ REL[s.relation] ?? s.relation }}</span>
+        <span v-if="s.relation" class="src__rel">{{ REL[s.relation] ?? s.relation }}<template v-if="(s as { pid?: string | null }).pid"> {{ (s as { pid?: string | null }).pid }}</template></span>
         <span v-if="s.year" class="src__meta num">{{ s.year }}</span>
         <span v-if="s.cited_by_count != null" class="src__meta num">{{ fmtInt(s.cited_by_count) }} {{ plural(s.cited_by_count, ['цитирование', 'цитирования', 'цитирований']) }}</span>
       </div>

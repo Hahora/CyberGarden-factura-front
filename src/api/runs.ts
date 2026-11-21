@@ -12,7 +12,7 @@ import { plural } from '../search'
 interface ApiFile {
   id: string; name: string; status: FileStatus; status_label?: string; stage?: string; progress?: number; has_data?: boolean; eta_seconds?: number | null
   results?: number; issues?: number; reason?: string | null; pages?: number | null
-  open_issue_count?: number; suggested_domain?: 'solar' | 'rag' | null; ocr_confidence?: number | null
+  open_issue_count?: number; suggested_domain?: 'solar' | 'rag' | null; ocr_confidence?: number | null; title?: string | null
 }
 export interface ApiRun {
   id: string; title: string; domain: string; status: Run['apiStatus']; created_at: string; updated_at?: string; progress?: number; eta_seconds?: number | null
@@ -56,6 +56,7 @@ function mapFile(f: ApiFile, old?: RunFile): RunFile {
     suggestedDomain: st === 'out' ? (f.suggested_domain ?? old?.suggestedDomain ?? undefined) : undefined,
     ocrConfidence: f.ocr_confidence ?? old?.ocrConfidence ?? undefined,
     openIssues: f.open_issue_count ?? undefined,
+    title: f.title?.trim() || old?.title || undefined,
   }
 }
 export function upsert(a: ApiRun) {

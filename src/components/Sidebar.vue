@@ -203,6 +203,8 @@ const runLabel = (r: { id: string; title: string; createdAt?: number; created_at
 }
 const runPapersOf = (id: string) => (runOf(id)?.files ?? []).filter((f) => f.reason !== 'не PDF')
 const paperTitle = (pid: string, domain: Domain = 'solar', runId = '') => {
+  const own = runId ? runOf(runId)?.files.find((f) => f.id === pid)?.title : undefined
+  if (own) return own
   if (isApi && runId && isRemoteScope(runId)) return domain === 'rag' ? ragTitleIn(pid, runId) : (apiPaperOf(runId, pid)?.publication?.title ?? '')
   return (domain === 'rag' ? ragPublication(pid) : publication(pid))?.title ?? ''
 }

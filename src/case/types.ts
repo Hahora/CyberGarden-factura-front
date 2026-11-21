@@ -62,6 +62,7 @@ export interface RunFile {
   suggestedDomain?: 'solar' | 'rag'
   ocrConfidence?: number
   openIssues?: number
+  title?: string
 }
 export interface Run {
   id: string

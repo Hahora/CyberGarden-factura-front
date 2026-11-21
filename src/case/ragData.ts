@@ -171,8 +171,16 @@ export function ragRefreshEdits(pid: string, run: string) {
       }, () => {})
   }, 400))
 }
+const wanted = new Set<string>()
+export function ragRescope(has: (pid: string) => boolean) {
+  for (const p of wanted) if (has(p)) void ragLoad(p)
+}
 export function ragLoad(pid: string): Promise<void> {
   const run = runOfScope()
+  if (isApi) {
+    wanted.add(pid)
+    if (!run) return Promise.resolve()
+  }
   const k = K(pid, run)
   if (cache[k] || !ragHasData(pid)) return Promise.resolve()
   let p = pending.get(k)

@@ -71,6 +71,7 @@ async function load(src: string) {
   status.value = 'loading'
   sizes.value = []
   doc.value = null
+  if (!src) return
   try {
     const d = await openPdf(src)
     if (seq !== loadSeq) return

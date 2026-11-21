@@ -1,11 +1,12 @@
 import { reactive, readonly, ref, watch } from 'vue'
 import GOLD from './goldTables'
-import { ragIssue, ragIssuesOf, ragRefreshEdits, ragResult, setRagScope } from './ragData'
+import { ragIssue, ragIssuesOf, ragRefreshEdits, ragRescope, ragResult, setRagScope } from './ragData'
 import type { DeviceRow, Domain, IssueRow, LayerRow, MaterialRow, MeasurementRow, PublicationRow, ResultRow, Review } from './types'
 import { METRICS } from './types'
-import { isRemoteScope, paperOf, pdfApiUrl, refreshPaper, setEditsHook, type ApiPaper, type ResultMeta } from '../api/papers'
+import { isReady, isRemoteScope, paperOf, pdfApiUrl, refreshPaper, setEditsHook, type ApiPaper, type ResultMeta } from '../api/papers'
 import type { ServerIssueState, ServerReview } from '../api/edits'
 import { toast } from '../store'
+import { isApi } from '../config'
 
 export * from './types'
 export * from './ragData'
@@ -66,13 +67,14 @@ export function registerPdf(pid: string, file: Blob, domain: Domain = 'solar') {
   BLOBS.set(k, URL.createObjectURL(file))
 }
 export const pdfUrl = (pid: string, domain: Domain = 'solar') =>
-  (remote() ? pdfApiUrl(pid, domain, scopeRef.value) : undefined) ?? BLOBS.get(domain === 'rag' ? 'rag:' + pid : pid) ?? `/corpus/${domain === 'rag' ? 'rag/' : ''}${pid.startsWith('P') ? 'test' : 'dev'}/${pid}.pdf`
+  (remote() ? pdfApiUrl(pid, domain, scopeRef.value) : undefined) ?? BLOBS.get(domain === 'rag' ? 'rag:' + pid : pid) ?? (isApi ? '' : undefined) ?? `/corpus/${domain === 'rag' ? 'rag/' : ''}${pid.startsWith('P') ? 'test' : 'dev'}/${pid}.pdf`
 
 const SKEY = 'gs:case:scope'
 const scopeRef = ref('')
 try { scopeRef.value = localStorage.getItem(SKEY) ?? '' } catch { }
 export const reviewScope = readonly(scopeRef)
 setRagScope(() => (isRemoteScope(scopeRef.value) ? scopeRef.value : ''))
+watch(() => (isRemoteScope(scopeRef.value) ? scopeRef.value : ''), (s) => { if (s) ragRescope((pid) => isReady(s, pid)) })
 export function setReviewScope(id: string) {
   if (scopeRef.value === id) return
   scopeRef.value = id

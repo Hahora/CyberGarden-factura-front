@@ -49,12 +49,13 @@ export function useDataReady(pids: Ref<string[]>, domain: Ref<Domain> = dataDoma
 }
 function useRagReady(pids: Ref<string[]>, domain: Ref<Domain>) {
   const ready = ref(domain.value !== 'rag' || pids.value.every(ragLoaded))
-  watch([pids, domain], async ([ps, d]) => {
+  watch([pids, domain, reviewScope], async ([ps, d, sc]) => {
     if (d !== 'rag') { ready.value = true; return }
     ready.value = ps.every(ragLoaded)
     if (ready.value) return
+    if (isApi && !isRemoteScope(sc)) return
     await ragLoadAll(ps)
-    if (pids.value === ps) ready.value = true
+    if (pids.value === ps && reviewScope.value === sc) ready.value = true
   }, { immediate: true })
   return ready
 }

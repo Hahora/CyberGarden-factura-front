@@ -29,7 +29,7 @@ export const isRemoteScope = (id: string) => remoteIds.has(id)
 const ragRuns = shallowReactive(new Set<string>())
 const ready = shallowReactive(new Map<string, Set<string>>())
 export function setRemoteFiles(id: string, pids: string[]) { ready.set(id, new Set(pids)) }
-const isReady = (run: string, pid: string) => ready.get(run)?.has(pid) ?? true
+export const isReady = (run: string, pid: string) => ready.get(run)?.has(pid) ?? true
 export function setRemoteDomain(id: string, domain: 'solar' | 'rag') {
   if (domain === 'rag') ragRuns.add(id)
   else ragRuns.delete(id)

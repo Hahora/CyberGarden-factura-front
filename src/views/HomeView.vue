@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import FileComposer from '../components/FileComposer.vue'
 import Icon from '../components/Icon.vue'
+import HomeWaves from '../components/HomeWaves.vue'
 import UiLoad from '../components/UiLoad.vue'
 import UiSkeleton from '../components/UiSkeleton.vue'
 import { runsLoad } from '../api/state'
@@ -45,6 +46,7 @@ const hello = hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе у�
 
 <template>
   <div ref="scroller" class="home">
+    <HomeWaves :active="busy || state.dragging" />
     <div class="home__inner">
       <Icon name="logo" :size="44" class="home__logo" />
       <h1 class="home__title">{{ hello }}. Что разберём?</h1>
@@ -74,8 +76,8 @@ const hello = hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе у�
 </template>
 
 <style scoped>
-.home { height: 100%; overflow: auto; display: grid; place-items: center; padding: var(--s10) var(--s6); }
-.home__inner { width: min(760px, 100%); display: grid; justify-items: center; }
+.home { position: relative; isolation: isolate; height: 100%; overflow: auto; display: grid; place-items: center; padding: var(--s10) var(--s6); }
+.home__inner { position: relative; z-index: 1; width: min(760px, 100%); display: grid; justify-items: center; }
 .home__logo { margin-bottom: var(--s5); }
 .home__title { font-size: var(--fs-hero); line-height: 1.15; font-weight: 300; letter-spacing: -0.01em; text-align: center; text-wrap: balance; }
 .home__what { margin-top: var(--s3); max-width: 34em; color: var(--muted); font-size: var(--fs-body); line-height: 1.5; text-align: center; text-wrap: balance; }
@@ -96,7 +98,7 @@ const hello = hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе у�
 .recent__d { flex: none; min-width: var(--s10); text-align: right; color: var(--faint); font-size: var(--fs-xs); }
 @media (max-width: 768px) {
   .home { display: block; padding: 0; }
-  .home__inner { min-height: 100%; display: flex; flex-direction: column; width: 100%; padding: 0 0 calc(var(--s3) + var(--safe-b)); }
+  .home__inner { min-height: 100%; display: flex; flex-direction: column; width: 100%; padding: clamp(var(--s8), 9vh, 88px) 0 calc(var(--s3) + var(--safe-b)); }
   .home__logo { margin: auto auto var(--s4); }
   .home__title { margin: 0 var(--s6); }
   .home__what { margin: var(--s2) var(--s6) 0; font-size: var(--fs-sm); }

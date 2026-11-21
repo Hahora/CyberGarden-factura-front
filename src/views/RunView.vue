@@ -15,7 +15,7 @@ import { useScrollMemory } from '../viewState'
 import { plural } from '../search'
 import { fmtInt } from '../fmt'
 import { dataLink } from '../dataTabs'
-import { DOMAIN_RU, NODATA_TEXT, checkLabel, metricLabel, paperPath, publication, resultLink, resultsOf, reviewInherited, reviewOf, unitRu, type RunFile } from '../case'
+import { DOMAIN_RU, NODATA_TEXT, checkLabel, metricLabel, paperPath, publication, resultLink, resultsOf, reviewInherited, reviewOf, reviewScope, setReviewScope, unitRu, type RunFile } from '../case'
 import { ragMetricCase, ragLoad, ragPublication, ragResultsOf, ragSummaryOf } from '../case/rag'
 import {
   rerunAs, addToRun, askRun, deleteRun, isRunning, messagesOf, renameRun, rerun, retryAnswer, runOf, runPapers, runPapersInScope, runSummary, stopRun,
@@ -65,7 +65,8 @@ async function loadRag() {
   const list = [...pids.value].sort((a, b) => ragSummaryOf(a).results - ragSummaryOf(b).results)
   try { await Promise.all(list.map(ragLoad)) } finally { ragBusy.value = false }
 }
-watch(() => [props.id, pids.value.join(',')], () => void loadRag(), { immediate: true })
+watch(() => [!!run.value, props.id] as const, ([ok, id]) => { if (ok && reviewScope.value !== id) setReviewScope(id) }, { immediate: true })
+watch(() => [props.id, pids.value.join(','), reviewScope.value], () => void loadRag(), { immediate: true })
 
 const filesOf = (ids: string[]) => {
   const all = run.value?.files ?? []
@@ -283,7 +284,25 @@ const timeOf = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2
 const copied = ref('')
 async function copyAnswer(id: string, a: unknown) {
   const cites = a && typeof a === 'object' && Array.isArray((a as { cites?: unknown }).cites) ? (a as { cites: { label?: string }[] }).cites.map((c, i) => `[${i + 1}] ${c.label ?? ''}`) : []
-  const txt = [answerText(a), ...(cites.length ? ['', ...cites] : [])].join('\n').trim()
+  await copyText(id, [answerText(a), ...(cites.length ? ['', ...cites] : [])].join('\n').trim())
+}
+function summaryText() {
+  const s = sum.value
+  const r = run.value
+  const n = (v: number, f: [string, string, string]) => `${fmtN(v)} ${plural(v, f)}`
+  const lines = [
+    r?.title ?? '',
+    `Область: ${r ? DOMAIN_RU[r.domain] : ''}`,
+    `${n(s.inScope, ['статья', 'статьи', 'статей'])} по теме из ${n(s.papers, ['файла', 'файлов', 'файлов'])}${s.out ? `, не по теме: ${s.out}` : ''}`,
+    n(s.values, ['значение', 'значения', 'значений']),
+    ...(isRag.value ? [n(s.configurations, ['конфигурация', 'конфигурации', 'конфигураций']), n(s.datasets, ['датасет', 'датасета', 'датасетов'])] : []),
+    `Замечания: открытых ${fmtN(openIssues.value)} из ${fmtN(s.issues)}`,
+  ]
+  if (s.best?.length) lines.push('', 'Лучшие значения:', ...s.best.map((b) => `${mName(b.metric)}: ${bestVal(b.value, b.unit)} (${b.pid})`))
+  if (coverage.value.length) lines.push('', 'Найдено в статьях:', ...coverage.value.map((c) => `${mName(c.metric)}: ${c.n} из ${pids.value.length}`))
+  return lines.join('\n').trim()
+}
+async function copyText(id: string, txt: string) {
   try {
     await navigator.clipboard.writeText(txt)
     copied.value = id
@@ -512,6 +531,12 @@ const answerText = (a: unknown) => {
                     <ul class="sugg__l" role="list">
                       <li v-for="q in suggestions" :key="q"><button type="button" class="chip" @click="ask(q)">{{ q }}</button></li>
                     </ul>
+                  </div>
+                  <div class="ans__meta">
+                    <time class="num" :datetime="new Date(m.at).toISOString()">{{ timeOf(m.at) }}</time>
+                    <button type="button" class="ans__copy" :aria-label="copied === m.id ? 'Скопировано' : 'Копировать сводку'" :data-tip="copied === m.id ? undefined : 'Копировать сводку разбора'" @click="copyText(m.id, summaryText())">
+                      <Icon :name="copied === m.id ? 'check' : 'copy'" :size="15" />{{ copied === m.id ? 'Скопировано' : 'Копировать' }}
+                    </button>
                   </div>
                 </template>
               </template>

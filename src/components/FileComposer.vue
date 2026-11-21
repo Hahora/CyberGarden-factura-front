@@ -2,6 +2,7 @@
 import UiSpinner from './UiSpinner.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
+import UiSelect from './UiSelect.vue'
 import { state } from '../store'
 import { inbox, takeInbox } from '../case/runs'
 import { useVoice } from '../useVoice'
@@ -143,7 +144,11 @@ const sendText = computed(() => (count.value ? `${props.sendLabel} ${count.value
           </div>
         </Transition>
       </div>
-      <div v-if="pickDomain" class="seg fc__dom" role="radiogroup" aria-label="Область разбора">
+      <UiSelect
+        v-if="pickDomain && state.mobile" class="fc__dom" :model-value="domain" :options="DOMAINS.map((d) => ({ value: d.id, label: d.id === 'solar' ? 'Солнечные' : d.label, icon: d.icon }))"
+        label="Область разбора" variant="chip" size="sm" @update:model-value="(v) => (domain = v as 'solar' | 'rag')"
+      />
+      <div v-else-if="pickDomain" class="seg fc__dom" role="radiogroup" aria-label="Область разбора">
         <button v-for="d in DOMAINS" :key="d.id" type="button" role="radio" :aria-checked="domain === d.id" :data-tip="d.tip" @click="domain = d.id"><Icon :name="d.icon" :size="14" />{{ d.label }}</button>
       </div>
       <span class="fc__flex" />

@@ -13,9 +13,9 @@ import { GOLD_COLUMNS } from '../case/goldTables'
 import { buildRagSubmission, buildSubmission, ragTableCsv, tableCsv, type Row, type TableName } from '../case/export'
 import { KEY_COL, LINKS, TABS, TAB_RU, submissionFocus } from '../case/submissionFocus'
 import { download } from '../exporters'
+import { downloadRunPassport } from '../case/runSet'
 import { fmtInt } from '../fmt'
 import { toast } from '../store'
-import { isApi } from '../config'
 import { plural } from '../search'
 
 const props = defineProps<{
@@ -73,7 +73,7 @@ const view = computed(() => {
   return s ? rows.filter((r) => hayOf(r).includes(s)) : rows
 })
 
-const bulkOn = computed(() => !!props.bulk && !isApi && tab.value === 'results')
+const bulkOn = computed(() => !!props.bulk && tab.value === 'results')
 const sel = ref<Set<string>>(new Set())
 const allOn = computed(() => view.value.length > 0 && view.value.every((r) => sel.value.has(rowKey('results', r))))
 const someOn = computed(() => !allOn.value && view.value.some((r) => sel.value.has(rowKey('results', r))))
@@ -228,6 +228,9 @@ function onTabKey(e: KeyboardEvent) {
       </button>
       <button type="button" class="btn btn--ghost btn--sm" :disabled="!countOf(tab) || tblBusy" :data-tip="pidSel ? 'Только строки выбранной статьи' : undefined" @click="runTable($event)">
         <UiSpinner v-if="tblBusy" :size="14" tone="current" /><Icon v-else name="table" :size="16" />{{ tblBusy ? 'Готовим таблицу…' : 'Скачать эту таблицу (CSV)' }}
+      </button>
+      <button type="button" class="btn btn--ghost btn--sm" data-tip="Поля, правила и критерии набора — тот же PASSPORT.md, что лежит в ZIP" @click="downloadRunPassport(runId, 'md')">
+        <Icon name="book" :size="16" />Паспорт (Markdown)
       </button>
       <span v-if="rejected" class="sv__rej">В набор не вошли отклонённые вами значения: {{ fmtInt(rejected) }}</span>
     </div>

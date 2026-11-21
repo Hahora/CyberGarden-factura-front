@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue'
 import { COLLECTIONS, type CollectionId } from './data'
 import { state } from './store'
+import { isApi } from './config'
 
 export interface Synonym {
   text: string
@@ -92,7 +93,7 @@ function snapshot(): Saved {
   }
   return { params, entries: ent }
 }
-try {
+if (!isApi) try {
   const saved = JSON.parse(localStorage.getItem(DKEY) ?? 'null') as Saved | null
   if (saved) {
     for (const [c, map] of Object.entries(saved.params ?? {})) {
@@ -104,7 +105,7 @@ try {
     for (const en of entries()) for (const t of saved.entries?.[en.id] ?? []) if (!en.synonyms.some((x) => x.text === t)) en.synonyms.push({ text: t, custom: true })
   }
 } catch { }
-watch(snapshot, (v) => {
+if (!isApi) watch(snapshot, (v) => {
   try { localStorage.setItem(DKEY, JSON.stringify(v)) } catch { }
 }, { deep: true })
 

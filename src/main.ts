@@ -30,8 +30,8 @@ const router = createRouter({
     { path: '/checks', component: () => import('./views/ChecksView.vue') },
     { path: '/quality', redirect: '/checks?section=accuracy' },
     { path: '/dictionary', redirect: '/settings?section=normalize' },
-    { path: '/history', component: () => (isApi ? import('./views/FrozenView.vue') : import('./views/HistoryView.vue')), meta: { title: 'Журнал правок' } },
-    { path: '/export', component: () => (isApi ? import('./views/FrozenView.vue') : import('./views/ExportView.vue')), meta: { title: 'Экспорт', download: true } },
+    { path: '/history', component: () => import('./views/HistoryView.vue'), meta: { title: 'Журнал правок' } },
+    { path: '/export', component: () => import('./views/ExportView.vue'), meta: { title: 'Экспорт', download: true } },
     { path: '/passport', component: () => import('./views/PassportView.vue') },
     { path: '/settings', component: () => import('./views/SettingsView.vue') },
     { path: '/profile', redirect: '/settings?section=profile' },
@@ -43,6 +43,7 @@ if (isApi) {
   const open = (p: string) => p === '/' || p === '/landing' || p === '/login'
   router.beforeEach(async (to) => {
     await startApi()
+    if (to.path === '/login' && hasToken()) return { path: '/app' }
     if (!open(to.path) && !hasToken()) return { path: '/login', query: { next: to.fullPath } }
     return true
   })

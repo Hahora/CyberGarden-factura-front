@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { isApi } from '../config'
+import { authed } from '../api/auth'
+import { ACCENTS, initials, state } from '../store'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -46,7 +49,9 @@ function go(id: string) {
   sheet.value = false
   root.value?.querySelector('#' + id)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' })
 }
-function toApp() { router.push('/login') }
+const signed = computed(() => isApi && authed.value)
+const avaBg = computed(() => (ACCENTS[state.profile.color] ?? ACCENTS.graphite!).c[0])
+function toApp() { router.push(signed.value ? '/app' : '/login') }
 function signup() { router.push('/login?mode=signup') }
 function upload() { router.push('/app') }
 
@@ -193,8 +198,14 @@ onBeforeUnmount(() => {
           <a v-for="n in NAV" :key="n.id" :href="'#' + n.id" :class="{ 'is-on': current === n.id }" @click.prevent="go(n.id)">{{ n.label }}</a>
         </nav>
         <div class="nav__right">
-          <a class="nav__login" href="/login" @click.prevent="toApp">Войти</a>
-          <a class="btn nav__cta" href="/login?mode=signup" @click.prevent="signup">Попробовать бесплатно</a>
+          <template v-if="signed">
+            <a class="nav__prof" href="/app" :title="state.profile.email" @click.prevent="toApp"><span class="nav__ava" :style="{ background: avaBg }">{{ initials(state.profile.name) }}</span><span class="nav__name">{{ state.profile.name }}</span></a>
+            <a class="btn nav__cta" href="/app" @click.prevent="toApp">Открыть приложение</a>
+          </template>
+          <template v-else>
+            <a class="nav__login" href="/login" @click.prevent="toApp">Войти</a>
+            <a class="btn nav__cta" href="/login?mode=signup" @click.prevent="signup">Попробовать бесплатно</a>
+          </template>
         </div>
         <button class="nav__burger" type="button" aria-label="Меню" :aria-expanded="sheet" @click="sheet = true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16" /></svg>
@@ -205,8 +216,11 @@ onBeforeUnmount(() => {
       <div class="sheet__card">
         <button class="sheet__x" type="button" aria-label="Закрыть" @click="sheet = false">×</button>
         <a v-for="n in NAV" :key="n.id" :href="'#' + n.id" @click.prevent="go(n.id)">{{ n.label }}</a>
-        <a href="/login" @click.prevent="toApp">Войти</a>
-        <a class="btn" href="/login?mode=signup" @click.prevent="signup">Попробовать бесплатно</a>
+        <a v-if="signed" class="btn" href="/app" @click.prevent="toApp">Открыть приложение · {{ state.profile.name }}</a>
+        <template v-else>
+          <a href="/login" @click.prevent="toApp">Войти</a>
+          <a class="btn" href="/login?mode=signup" @click.prevent="signup">Попробовать бесплатно</a>
+        </template>
       </div>
     </div>
 
@@ -363,7 +377,7 @@ onBeforeUnmount(() => {
         <a class="logo" href="#top" @click.prevent="go('top')"><svg><use href="#lp-logo" /></svg>фактура<span class="logo__ai">AI</span></a>
         <div><h4>Продукт</h4><a href="#how" @click.prevent="go('how')">Как это работает</a></div>
         <div><h4>Возможности</h4><a href="#checks" @click.prevent="go('checks')">Проверки</a><a href="#results" @click.prevent="go('results')">Результаты</a></div>
-        <div><h4>Приложение</h4><a href="/login" @click.prevent="toApp">Войти</a><a href="/login?mode=signup" @click.prevent="signup">Попробовать бесплатно</a></div>
+        <div><h4>Приложение</h4><a v-if="signed" href="/app" @click.prevent="toApp">Открыть приложение</a><template v-else><a href="/login" @click.prevent="toApp">Войти</a><a href="/login?mode=signup" @click.prevent="signup">Попробовать бесплатно</a></template></div>
         <small>© 2026 Фактура AI</small>
       </div>
     </footer>
@@ -413,6 +427,9 @@ onBeforeUnmount(() => {
 .nav__links a.is-on::after { content: ''; position: absolute; left: 50%; bottom: 2px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--blue); }
 .nav__right { display: flex; align-items: center; gap: 12px; }
 .nav__login { padding: 10px 14px; font-weight: 600; font-size: 16px; }
+.nav__prof { display: inline-flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; border-radius: 999px; font-weight: 600; font-size: 15px; max-width: 220px; }
+.nav__ava { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #fff; font-size: 12px; font-weight: 600; }
+.nav__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav__cta { height: 46px; padding: 0 22px; font-size: 16px; background: #fff; color: var(--ink) !important; box-shadow: 0 6px 20px -8px rgba(0, 0, 0, .25); }
 .nav.is-light .nav__cta { box-shadow: 0 0 0 1px var(--line), 0 6px 20px -10px rgba(0, 0, 0, .2); }
 .nav__burger { display: none; width: 46px; height: 46px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
@@ -635,7 +652,7 @@ onBeforeUnmount(() => {
 @media (max-width: 720px) {
   .lp { font-size: 16px; }
   .nav__in, .nav.is-scrolled .nav__in { height: 64px; gap: 8px; }
-  .nav__login { display: none; }
+  .nav__login, .nav__prof { display: none; }
   .nav__cta { display: none; }
   .nav__burger { margin-right: -8px; }
   .logo { font-size: 22px; gap: 10px; }

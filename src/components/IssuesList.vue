@@ -13,7 +13,6 @@ import {
 } from '../case/rag'
 import { toast } from '../store'
 import { ruText } from '../case/ask'
-import { isApi, DEV_TEXT } from '../config'
 
 const props = withDefaults(defineProps<{
   pids?: string[]
@@ -94,14 +93,12 @@ function show(i: IssueRow) {
   if (!props.inPaper) void router.push(withRun({ path: paperPath(i.publication_id, props.domain), query: { i: i.issue_id } }))
 }
 function mark(i: IssueRow, how: 'fixed' | 'ok') {
-  if (isApi) return
   const d = props.domain
   const prev = resolveIssue(i.publication_id, i.issue_id, how, d)
   const back = () => (prev === 'open' ? reopenIssue(i.publication_id, i.issue_id, d) : resolveIssue(i.publication_id, i.issue_id, prev, d))
   toast(`${how === 'ok' ? 'Не ошибка' : 'Исправлено'}: ${labelOf(i).toLowerCase()} · ${i.publication_id}`, { label: 'Вернуть', run: back })
 }
 function reopen(i: IssueRow) {
-  if (isApi) return
   const prev = stateOf(i)
   reopenIssue(i.publication_id, i.issue_id, props.domain)
   toast(`Замечание снова открыто · ${i.publication_id}`, { label: 'Отменить', run: () => { if (prev !== 'open') resolveIssue(i.publication_id, i.issue_id, prev, props.domain) } })
@@ -164,10 +161,10 @@ watch(() => props.selected, async (v) => {
             <div class="it__acts">
               <button type="button" class="btn btn--soft btn--sm" @click="show(i)"><Icon name="eye" :size="16" />Показать в PDF</button>
               <template v-if="isOpen(i)">
-                <button type="button" class="btn btn--ghost btn--sm" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : 'Вы поправили число в статье или в данных — пометить замечание исправленным'" @click="mark(i, 'fixed')"><Icon name="check" :size="16" />Отметить исправленным</button>
-                <button type="button" class="btn btn--ghost btn--sm" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : 'Проверили: в статье всё верно, программа ошиблась — закрыть замечание'" @click="mark(i, 'ok')">Это не ошибка</button>
+                <button type="button" class="btn btn--ghost btn--sm" :data-tip="'Вы поправили число в статье или в данных — пометить замечание исправленным'" @click="mark(i, 'fixed')"><Icon name="check" :size="16" />Отметить исправленным</button>
+                <button type="button" class="btn btn--ghost btn--sm" :data-tip="'Проверили: в статье всё верно, программа ошиблась — закрыть замечание'" @click="mark(i, 'ok')">Это не ошибка</button>
               </template>
-              <button v-else-if="!autoFixed(i)" type="button" class="btn btn--ghost btn--sm" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="reopen(i)"><Icon name="undo" :size="16" />Открыть снова</button>
+              <button v-else-if="!autoFixed(i)" type="button" class="btn btn--ghost btn--sm" @click="reopen(i)"><Icon name="undo" :size="16" />Открыть снова</button>
             </div>
           </li>
         </ul>

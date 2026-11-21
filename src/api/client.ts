@@ -13,6 +13,7 @@ let access = ''
 let expiresAt = 0
 try { access = sessionStorage.getItem(TK) ?? '' } catch { }
 export const hasToken = () => !!access
+export const accessToken = () => access
 export function setToken(t: string, expiresIn = 900) {
   access = t
   expiresAt = t ? Date.now() + expiresIn * 1000 : 0

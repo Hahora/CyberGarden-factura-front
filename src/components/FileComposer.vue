@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import { state } from '../store'
 import { inbox, takeInbox } from '../case/runs'
+import { useVoice } from '../useVoice'
 
 const props = withDefaults(defineProps<{ placeholder?: string; autofocus?: boolean; sendLabel?: string; busy?: boolean; busyText?: string; ask?: boolean; pickDomain?: boolean }>(), {
   placeholder: 'Перетащите PDF, папку или ZIP',
@@ -28,6 +29,7 @@ function grow() {
   el.style.height = Math.min(el.scrollHeight, 200) + 'px'
 }
 const folder = ref('')
+const voice = useVoice(text, { onText: () => void nextTick(grow), onEnd: () => area.value?.focus() })
 const root = ref<HTMLElement | null>(null)
 const filesEl = ref<HTMLInputElement | null>(null)
 const folderEl = ref<HTMLInputElement | null>(null)
@@ -58,6 +60,7 @@ function clear() {
 }
 function send() {
   if (!can.value) return
+  voice.stop()
   if (count.value) emit('send', [...files.value], folder.value, domain.value)
   const q = text.value.trim()
   if (props.ask && q) emit('ask', q)
@@ -111,7 +114,8 @@ const sendText = computed(() => (count.value ? `${props.sendLabel} ${count.value
 </script>
 
 <template>
-  <div ref="root" class="fc" :class="{ 'is-drag': state.dragging, 'has-files': count > 0 }" tabindex="0" role="group" aria-label="Файлы для разбора" @keydown="onKey">
+  <div ref="root" class="fc" :class="{ 'is-drag': state.dragging, 'has-files': count > 0, 'is-rec': voice.listening.value }" tabindex="0" role="group" aria-label="Файлы для разбора" @keydown="onKey">
+    <p v-if="voice.listening.value" class="fc__rec" aria-live="polite"><span class="fc__recdot" />Слушаю… говорите, текст появится в поле</p>
     <div class="fc__area" @click.self="!count && !ask && pick(false)">
       <p v-if="!count && !ask" class="fc__ph" @click="pick(false)">{{ placeholder }}</p>
       <ul v-if="count" class="fc__chips" role="list">
@@ -143,6 +147,14 @@ const sendText = computed(() => (count.value ? `${props.sendLabel} ${count.value
         <button v-for="d in DOMAINS" :key="d.id" type="button" role="radio" :aria-checked="domain === d.id" :data-tip="d.tip" @click="domain = d.id"><Icon :name="d.icon" :size="14" />{{ d.label }}</button>
       </div>
       <span class="fc__flex" />
+      <button
+        v-if="ask" type="button" class="icon-btn fc__mic" :class="{ 'is-on': voice.listening.value }"
+        :aria-label="voice.listening.value ? 'Остановить запись' : 'Голосовой ввод'" :aria-pressed="voice.listening.value"
+        :data-tip="voice.listening.value ? 'Остановить' : 'Голосовой ввод'" @click="voice.toggle"
+      >
+        <span v-if="voice.listening.value" class="wave" aria-hidden="true"><i /><i /><i /><i /></span>
+        <Icon v-else name="mic" :size="18" />
+      </button>
       <button type="button" class="fc__send" :class="{ 'is-on': count > 0 || busy, 'is-busy': busy }" :disabled="!can || busy" :data-tip="count && !ask ? 'Нажмите, чтобы начать разбор' : undefined" :aria-label="count ? sendText : ask ? 'Спросить' : 'Разобрать'" @click="send">
         <UiSpinner v-if="busy" :size="14" tone="current" /><Icon v-else name="send" :size="16" />
         <span v-if="busy" class="fc__sendt">{{ busyText || 'Отправляем…' }}</span>
@@ -178,6 +190,18 @@ const sendText = computed(() => (count.value ? `${props.sendLabel} ${count.value
 .fc__chip .chip__x { position: relative; width: 24px; height: 24px; }
 .fc__chip .chip__x::after { content: ''; position: absolute; inset: -6px; }
 
+.fc.is-rec { box-shadow: var(--shadow), 0 0 0 1.5px var(--red); }
+.fc__rec { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s2); font-size: var(--fs-xs); color: var(--red); }
+.fc__recdot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); animation: fc-rec 1.2s ease-in-out infinite; }
+@keyframes fc-rec { 50% { opacity: 0.3; } }
+.fc__mic.is-on { background: var(--red-soft); color: var(--red); }
+.wave { display: flex; align-items: center; gap: 2px; height: 16px; }
+.wave i { width: 3px; height: 100%; border-radius: var(--r-pill); background: currentColor; animation: fc-wave 900ms ease-in-out infinite; }
+.wave i:nth-child(2) { animation-delay: 120ms; }
+.wave i:nth-child(3) { animation-delay: 240ms; }
+.wave i:nth-child(4) { animation-delay: 360ms; }
+@keyframes fc-wave { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { .wave i, .fc__recdot { animation: none; } }
 .fc__bar { display: flex; align-items: center; gap: var(--s2); margin-left: calc(-1 * var(--s2)); }
 .fc__clipw { position: relative; }
 .fc__clip.is-open { background: var(--bg-2); }

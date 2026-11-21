@@ -15,6 +15,7 @@ import {
 import { download, toXlsx, type ExportTable } from '../exporters'
 import { dataDomain, dataPids, dataRun, exportPick, setDataRun, useDataReady } from '../dataTabs'
 import { runOf } from '../case/runs'
+import { isApi } from '../config'
 import { plural } from '../search'
 import { state, toast } from '../store'
 import { useViewState } from '../viewState'
@@ -92,7 +93,14 @@ const stem = computed(() => (dataRun.value ? dataRun.value : 'all'))
 const solarTables = () => tables.value as unknown as ReturnType<typeof buildSubmission>
 const ragTables = () => tables.value as unknown as ReturnType<typeof buildRagSubmission>
 const { busy: zipBusy, run: zipRun } = useBusy()
-function zipNow() {
+const onServer = computed(() => isApi && !only.value && typeof route.query.pids !== 'string')
+async function zipNow() {
+  if (onServer.value) {
+    const m = await import('../api/runs')
+    if (dataRun.value) await m.downloadServerSet(dataRun.value)
+    else await m.downloadAllRunsSet(isRag.value ? 'rag' : 'solar')
+    return
+  }
   if (isRag.value) {
     download(`submission-rag-${stem.value}.zip`, ragSubmissionZip(ragTables()), 'application/zip')
     toast(submissionToast(ragSummaryOfTables(ragTables())))
@@ -113,14 +121,16 @@ function ragJson() {
   })))
   return { meta: { generated_by: 'Фактура AI', area: 'rag', tables: Object.fromEntries(RAG_TABLE_NAMES.map((n) => [n, tables.value[n]?.length ?? 0])) }, ...Object.fromEntries(RAG_TABLE_NAMES.map((n) => [n, typed(n)])) }
 }
-function getJson() {
+async function getJson() {
   if (!total.value) return
+  if (onServer.value && dataRun.value) { await (await import('../api/runs')).downloadServerData(dataRun.value, 'json'); return }
   if (isRag.value) download(`submission-rag-${stem.value}.json`, JSON.stringify(ragJson(), null, 2), 'application/json')
   else downloadJson(solarTables(), `submission-${stem.value}.json`)
   toast(`Скачан файл JSON: ${fmtInt(values.value)} ${plural(values.value, ['значение', 'значения', 'значений'])}`)
 }
-function getXlsx() {
+async function getXlsx() {
   if (!values.value) return
+  if (onServer.value && dataRun.value) { await (await import('../api/runs')).downloadServerData(dataRun.value, 'xlsx'); return }
   if (isRag.value) {
     const head = RAG_COLUMNS.results!
     const rows = tables.value.results ?? []

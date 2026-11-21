@@ -6,6 +6,8 @@ export interface PromptOptions {
   placeholder?: string
   ok?: string
   label?: string
+  message?: string
+  danger?: boolean
 }
 
 export const prompt = reactive<{ open: boolean; opts: PromptOptions; value: string; resolve: ((v: string | null) => void) | null }>({
@@ -28,5 +30,9 @@ export function closePrompt(ok: boolean) {
   const v = prompt.value.trim()
   prompt.open = false
   prompt.resolve = null
-  r?.(ok && v ? v : null)
+  r?.(ok && (v || prompt.opts.message) ? v : null)
+}
+
+export async function askConfirm(title: string, message: string, ok = 'Удалить'): Promise<boolean> {
+  return (await askText({ title, message, ok, danger: true })) !== null
 }

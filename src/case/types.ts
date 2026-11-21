@@ -59,6 +59,9 @@ export interface RunFile {
   reason?: string
   stage?: string
   eta?: number
+  suggestedDomain?: 'solar' | 'rag'
+  ocrConfidence?: number
+  openIssues?: number
 }
 export interface Run {
   id: string
@@ -72,6 +75,7 @@ export interface Run {
   apiResults?: number
   apiIssues?: number
   apiProgress?: number
+  apiIssuesOpen?: number
   apiEta?: number
 }
 

@@ -1,9 +1,11 @@
 import { reactive, readonly, ref, watch } from 'vue'
 import GOLD from './goldTables'
-import { ragIssue, ragIssuesOf, ragResult, setRagScope } from './ragData'
+import { ragIssue, ragIssuesOf, ragRefreshEdits, ragResult, setRagScope } from './ragData'
 import type { DeviceRow, Domain, IssueRow, LayerRow, MaterialRow, MeasurementRow, PublicationRow, ResultRow, Review } from './types'
 import { METRICS } from './types'
-import { isRemoteScope, paperOf, pdfApiUrl, type ApiPaper, type ResultMeta } from '../api/papers'
+import { isRemoteScope, paperOf, pdfApiUrl, refreshPaper, setEditsHook, type ApiPaper, type ResultMeta } from '../api/papers'
+import type { ServerIssueState, ServerReview } from '../api/edits'
+import { toast } from '../store'
 
 export * from './types'
 export * from './ragData'
@@ -64,7 +66,7 @@ export function registerPdf(pid: string, file: Blob, domain: Domain = 'solar') {
   BLOBS.set(k, URL.createObjectURL(file))
 }
 export const pdfUrl = (pid: string, domain: Domain = 'solar') =>
-  (remote() ? pdfApiUrl(pid, domain) : undefined) ?? BLOBS.get(domain === 'rag' ? 'rag:' + pid : pid) ?? `/corpus/${domain === 'rag' ? 'rag/' : ''}${pid.startsWith('P') ? 'test' : 'dev'}/${pid}.pdf`
+  (remote() ? pdfApiUrl(pid, domain, scopeRef.value) : undefined) ?? BLOBS.get(domain === 'rag' ? 'rag:' + pid : pid) ?? `/corpus/${domain === 'rag' ? 'rag/' : ''}${pid.startsWith('P') ? 'test' : 'dev'}/${pid}.pdf`
 
 const SKEY = 'gs:case:scope'
 const scopeRef = ref('')
@@ -99,13 +101,88 @@ export const reviewIn = (scope: string, pid: string, rid: string, domain: Domain
 export const reviewOf = (pid: string, rid: string, domain: Domain = 'solar'): Review => reviewIn(scopeRef.value, pid, rid, domain)
 export function setReview(pid: string, rid: string, patch: Partial<Review>, domain: Domain = 'solar') {
   const prev = reviewOf(pid, rid, domain)
-  bucket()[rkey(pid, rid, domain)] = { ...prev, ...patch, at: Date.now() }
+  const next = { ...prev, ...patch, at: Date.now() }
+  if (next.status === 'new' && next.corrected == null) resetReview(pid, rid, domain)
+  else {
+    bucket()[rkey(pid, rid, domain)] = next
+    queueReview(pid, rid, domain, prev)
+  }
   return prev
 }
 export function resetReview(pid: string, rid: string, domain: Domain = 'solar') {
+  const prev = reviewOf(pid, rid, domain)
   const b = reviews[scopeRef.value]
   if (b) delete b[rkey(pid, rid, domain)]
+  if (prev.status !== 'new' || prev.corrected != null) queueReview(pid, rid, domain, prev)
 }
+
+type Pending = { scope: string; domain: Domain; pid: string; root: string; prev: Review }
+const pendingReviews = new Map<string, Pending>()
+let flushQueued = false
+function queueReview(pid: string, rid: string, domain: Domain, prev: Review) {
+  const scope = scopeRef.value
+  if (!isRemoteScope(scope)) return
+  const root = rootOf(pid, rid, domain)
+  const k = scope + '|' + paperKey(pid, domain) + ':' + root
+  if (!pendingReviews.has(k)) pendingReviews.set(k, { scope, domain, pid, root, prev })
+  if (!flushQueued) { flushQueued = true; queueMicrotask(flushReviews) }
+}
+function restoreReview(x: Pending) {
+  const k = paperKey(x.pid, x.domain) + ':' + x.root
+  const b = (reviews[x.scope] ??= {})
+  if (x.prev.status === 'new' && x.prev.corrected == null) delete b[k]
+  else b[k] = x.prev
+}
+function afterEdit(scope: string, domain: Domain, pid: string) {
+  if (domain === 'rag') ragRefreshEdits(pid, scope)
+  else refreshPaper(scope, pid)
+  void import('../api/runs').then((m) => m.dropSummary(scope))
+}
+async function flushReviews() {
+  flushQueued = false
+  const items = [...pendingReviews.values()]
+  pendingReviews.clear()
+  const api = await import('../api/edits')
+  const byScope = new Map<string, Pending[]>()
+  for (const x of items) byScope.set(x.scope, [...(byScope.get(x.scope) ?? []), x])
+  for (const [scope, list] of byScope) {
+    const cur = (x: Pending) => reviews[scope]?.[paperKey(x.pid, x.domain) + ':' + x.root] ?? ({ status: 'new' } as Review)
+    const plain = list.filter((x) => cur(x).corrected == null && x.prev.corrected == null)
+    const single = plain.length > 1 ? list.filter((x) => !plain.includes(x)) : list
+    const jobs: Promise<unknown>[] = []
+    if (plain.length > 1) {
+      jobs.push(api.sendReviewBatch(scope, plain.map((x) => ({ domain: x.domain, pid: x.pid, rid: x.root, status: cur(x).status })))
+        .catch((e) => { plain.forEach(restoreReview); toast(api.errText(e, 'Не удалось сохранить правки')) }))
+    }
+    for (const x of single) {
+      const rv = cur(x)
+      jobs.push(api.sendReview(scope, x.domain, x.pid, x.root, rv.status, rv.corrected ?? null)
+        .catch((e) => { restoreReview(x); toast(api.errText(e, 'Не удалось сохранить правку')) }))
+    }
+    await Promise.all(jobs)
+    for (const key of new Set(list.map((x) => x.domain + '|' + x.pid))) {
+      const [d, pid] = key.split('|') as [Domain, string]
+      afterEdit(scope, d, pid)
+    }
+  }
+}
+
+setEditsHook((scope, domain, pid, rv?: Record<string, ServerReview>, st?: Record<string, ServerIssueState>) => {
+  const pre = paperKey(pid, domain) + ':'
+  const b = (reviews[scope] ??= {})
+  for (const k of Object.keys(b)) if (k.startsWith(pre)) delete b[k]
+  for (const [rid, v] of Object.entries(rv ?? {})) {
+    const c = v.corrected_value == null || v.corrected_value === '' ? undefined : Number(v.corrected_value)
+    if (v.status === 'new' && c == null) continue
+    b[pre + rid] = { status: v.status, ...(Number.isFinite(c) ? { corrected: c } : {}), at: Date.parse(v.at ?? '') || Date.now() }
+  }
+  const m = (issueMarks[scope] ??= {})
+  for (const k of Object.keys(m)) if (k.startsWith(pre)) delete m[k]
+  for (const [iid, v] of Object.entries(st ?? {})) {
+    if (v.auto || v.state === 'open') continue
+    m[pre + iid] = { state: v.state, at: Date.now() }
+  }
+})
 export function reviewCountIn(scope: string, prefixes: string[], status: Review['status']): number {
   let n = 0
   for (const [k, v] of Object.entries(reviews[scope] ?? {})) if (v.status === status && prefixes.some((p) => k.startsWith(p))) n++
@@ -368,12 +445,31 @@ export function issueStateIn(scope: string, pid: string, iid: string, domain: Do
 export const isIssueOpen = (pid: string, iid: string, domain: Domain = 'solar') => issueState(pid, iid, domain) === 'open'
 export function resolveIssue(pid: string, iid: string, how: 'fixed' | 'ok', domain: Domain = 'solar'): IssueState {
   const prev = issueState(pid, iid, domain)
-  marksOf()[paperKey(pid, domain) + ':' + iid] = { state: how, at: Date.now() }
+  const k = paperKey(pid, domain) + ':' + iid
+  const was = marksOf()[k]
+  marksOf()[k] = { state: how, at: Date.now() }
+  syncIssue(pid, iid, domain, how, was)
   return prev
 }
 export function reopenIssue(pid: string, iid: string, domain: Domain = 'solar') {
+  const k = paperKey(pid, domain) + ':' + iid
   const b = issueMarks[scopeRef.value]
-  if (b) delete b[paperKey(pid, domain) + ':' + iid]
+  const was = b?.[k]
+  if (b) delete b[k]
+  syncIssue(pid, iid, domain, 'open', was)
+}
+function syncIssue(pid: string, iid: string, domain: Domain, state: IssueState, was: IssueMark | undefined) {
+  const scope = scopeRef.value
+  if (!isRemoteScope(scope)) return
+  const k = paperKey(pid, domain) + ':' + iid
+  void import('../api/edits').then((api) => api.sendIssueState(scope, domain, pid, iid, state)
+    .then(() => afterEdit(scope, domain, pid))
+    .catch((e) => {
+      const b = (issueMarks[scope] ??= {})
+      if (was) b[k] = was
+      else delete b[k]
+      toast(api.errText(e, 'Не удалось сохранить отметку замечания'))
+    }))
 }
 export const openIssuesOf = (pid: string, domain: Domain = 'solar') =>
   (domain === 'rag' ? ragIssuesOf(pid) : issuesOf(pid)).filter((i) => isIssueOpen(pid, i.issue_id, domain))
@@ -469,6 +565,16 @@ export function resetScopeEdits(scope: string = scopeRef.value): () => void {
   const m = issueMarks[scope] ? { ...issueMarks[scope] } : undefined
   delete reviews[scope]
   delete issueMarks[scope]
+  if (isRemoteScope(scope)) {
+    void import('../api/edits').then((api) => api.resetRunEdits(scope)
+      .then(() => import('../api/runs').then((m) => m.reloadRunPapers(scope)))
+      .catch((e) => {
+        if (r) reviews[scope] = r
+        if (m) issueMarks[scope] = m
+        toast(api.errText(e, 'Не удалось сбросить правки'))
+      }))
+    return () => toast('Правки на сервере сброшены — вернуть их нельзя')
+  }
   return () => {
     if (r) reviews[scope] = { ...r, ...(reviews[scope] ?? {}) }
     if (m) issueMarks[scope] = { ...m, ...(issueMarks[scope] ?? {}) }

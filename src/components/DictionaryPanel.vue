@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, toRef } from 'vue'
+import { computed, toRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from './Icon.vue'
 import UiSelect from './UiSelect.vue'
@@ -10,6 +10,7 @@ import {
 } from '../dictionary'
 import { plural } from '../search'
 import { state, toast } from '../store'
+import { isApi } from '../config'
 import { openDeep, useViewState } from '../viewState'
 
 type Tab = 'params' | 'units' | 'materials' | 'conditions'
@@ -27,6 +28,7 @@ const ui = useViewState('dictionary', () => ({ tab: 'params' as Tab, q: '', draf
 const tab = toRef(ui, 'tab')
 const q = toRef(ui, 'q')
 const cid = computed<CollectionId>(() => state.collection)
+if (isApi) watch(cid, (c) => void import('../api/extra').then((m) => m.loadDictionary(c)).catch(() => toast('Не удалось загрузить словарь с сервера')), { immediate: true })
 const col = computed(() => COLLECTIONS[cid.value])
 const norm = (s: string) => s.toLowerCase().replace(/ё/g, 'е')
 const hit = (...parts: string[]) => !q.value.trim() || parts.some((p) => norm(p).includes(norm(q.value.trim())))
@@ -45,9 +47,16 @@ const drafts = ui.drafts
 function addParam(key: string) {
   const text = (drafts[key] ?? '').trim()
   if (!text) return
-  const n = addParamSynonym(cid.value, key, text)
+  const c = cid.value
+  const n = addParamSynonym(c, key, text)
   if (n == null) return toast(`«${text}» уже есть в словаре`)
   drafts[key] = ''
+  if (isApi) {
+    void import('../api/extra').then((api) => api.addParamSynonymApi(c, key, text)
+      .then(() => toast(`Синоним «${text}» добавлен — применится к новым разборам и перезапускам`))
+      .catch((e) => { removeParamSynonym(c, key, text); drafts[key] = text; toast(api.errText(e, 'Не удалось добавить синоним')) }))
+    return
+  }
   toast(`Синоним «${text}» добавлен — пересчитано ${n} ${plural(n, ['статья', 'статьи', 'статей'])}`)
 }
 function addEntry(entry: MaterialEntry | ConditionEntry) {
@@ -55,16 +64,34 @@ function addEntry(entry: MaterialEntry | ConditionEntry) {
   if (!text) return
   if (!addEntrySynonym(entry, text)) return toast(`«${text}» уже есть в словаре`)
   drafts[entry.id] = ''
+  if (isApi) {
+    void import('../api/extra').then((api) => api.addEntrySynonymApi(entry.id, text)
+      .then(() => toast(`Синоним «${text}» добавлен — применится к новым разборам и перезапускам`))
+      .catch((e) => { removeEntrySynonym(entry, text); drafts[entry.id] = text; toast(api.errText(e, 'Не удалось добавить синоним')) }))
+    return
+  }
   toast(`Синоним «${text}» добавлен`)
 }
 
 function delParam(key: string, text: string) {
   const c = cid.value
   removeParamSynonym(c, key, text)
+  if (isApi) {
+    void import('../api/extra').then((api) => api.removeParamSynonymApi(c, key, text)
+      .then(() => toast(`Синоним «${text}» удалён`))
+      .catch((e) => { addParamSynonym(c, key, text); toast(api.errText(e, 'Не удалось удалить синоним')) }))
+    return
+  }
   toast(`Синоним «${text}» удалён`, { label: 'Вернуть', run: () => void addParamSynonym(c, key, text) })
 }
 function delEntry(entry: MaterialEntry | ConditionEntry, text: string) {
   removeEntrySynonym(entry, text)
+  if (isApi) {
+    void import('../api/extra').then((api) => api.removeEntrySynonymApi(entry.id, text)
+      .then(() => toast(`Синоним «${text}» удалён`))
+      .catch((e) => { addEntrySynonym(entry, text); toast(api.errText(e, 'Не удалось удалить синоним')) }))
+    return
+  }
   toast(`Синоним «${text}» удалён`, { label: 'Вернуть', run: () => void addEntrySynonym(entry, text) })
 }
 

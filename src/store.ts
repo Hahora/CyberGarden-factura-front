@@ -134,6 +134,7 @@ export interface Toast {
   id: number
   text: string
   action?: { label: string; run: () => void }
+  ms: number
 }
 
 const KEY = 'gs:v1:'
@@ -779,8 +780,9 @@ let toastId = 0
 export function toast(text: string, action?: Toast['action']) {
   const id = ++toastId
   for (let i = state.toasts.length - 1; i >= 0; i--) if (state.toasts[i]!.text === text) state.toasts.splice(i, 1)
-  state.toasts.push({ id, text, action })
-  setTimeout(() => dismiss(id), action ? (state.mobile ? 4000 : 7000) : 3000)
+  const ms = action ? (state.mobile ? 4000 : 7000) : 3000
+  state.toasts.push({ id, text, action, ms })
+  setTimeout(() => dismiss(id), ms)
   return id
 }
 export const dismiss = (id: number) => {

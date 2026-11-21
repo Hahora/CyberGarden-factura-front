@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { dock, watchDock } from '../dock'
 import { state, dismiss, type Toast } from '../store'
 import Icon from './Icon.vue'
@@ -14,7 +14,9 @@ function act(t: Toast) {
   close(t)
 }
 
-const held = new Set<number>()
+const held = reactive(new Set<number>())
+const bar = reactive<Record<number, { ms: number; gen: number }>>({})
+const barOf = (t: Toast) => bar[t.id] ?? { ms: t.ms, gen: 0 }
 const timers = new Map<number, number>()
 const MAX = 1
 const hold = (id: number) => {
@@ -24,7 +26,9 @@ const hold = (id: number) => {
 function release(t: Toast) {
   held.delete(t.id)
   clearTimeout(timers.get(t.id))
-  timers.set(t.id, window.setTimeout(() => dismiss(t.id), t.action ? 4000 : 2500))
+  const ms = t.action ? 4000 : 2500
+  bar[t.id] = { ms, gen: barOf(t).gen + 1 }
+  timers.set(t.id, window.setTimeout(() => dismiss(t.id), ms))
 }
 watch(
   () => state.toasts.map((t) => t.id).join(','),
@@ -36,6 +40,7 @@ watch(
       if (t) state.toasts.push(t)
     }
     state.toasts.forEach((t) => lastSeen.set(t.id, t))
+    for (const k of Object.keys(bar)) if (!ids.has(Number(k))) delete bar[Number(k)]
     while (state.toasts.length > MAX) {
       const gone = state.toasts.shift()
       if (gone) held.delete(gone.id)
@@ -61,6 +66,7 @@ const lift = computed((): Record<string, string> | undefined => {
         @pointerenter="hold(t.id)" @pointerleave="release(t)" @focusin="hold(t.id)" @focusout="release(t)"
       >
         <span class="toast__text">{{ t.text }}</span>
+        <span :key="barOf(t).gen" class="toast__bar" :class="{ 'is-held': held.has(t.id) }" :style="{ animationDuration: barOf(t).ms + 'ms' }" aria-hidden="true" />
         <button v-if="t.action" class="toast__action" type="button" @click="act(t)">
           {{ t.action.label }}
         </button>
@@ -89,6 +95,14 @@ const lift = computed((): Record<string, string> | undefined => {
   font-size: var(--fs-body); line-height: 1.4;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--on-solid) 10%, transparent), var(--shadow-pop);
 }
+.toast { position: relative; overflow: hidden; }
+.toast__bar {
+  position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
+  background: color-mix(in srgb, var(--on-solid) 55%, transparent);
+  transform-origin: left; animation: toast-bar linear forwards;
+}
+.toast__bar.is-held { animation-play-state: paused; opacity: .4; }
+@keyframes toast-bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 .toast__text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .toast__action {
   flex: none; height: 32px; padding: 0 var(--s3); border-radius: var(--r-pill);

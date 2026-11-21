@@ -8,7 +8,7 @@ import { METRICS, type FileStatus, type Run, type RunFile } from './types'
 import { toast } from '../store'
 import { DOMAIN_RU, pdfUrl } from './index'
 import { isApi } from '../config'
-import { summaryOf } from '../api/runs'
+import { issueStats, summaryOf } from '../api/runs'
 
 const hasDataIn = (domain: Run['domain'], pid: string) => (domain === 'rag' ? ragHasData(pid) : hasData(pid))
 const inScopeIn = (domain: Run['domain'], pid: string) => (domain === 'rag' ? ragInScope(pid) : inScope(pid))
@@ -30,7 +30,7 @@ export type Msg =
   | { id: string; role: 'user'; kind: 'files'; at: number; fileIds: string[] }
   | { id: string; role: 'system'; kind: 'run'; at: number; fileIds: string[] }
   | { id: string; role: 'user'; kind: 'question'; at: number; text: string }
-  | { id: string; role: 'system'; kind: 'answer'; at: number; q: string; answer?: unknown; pending?: boolean; error?: string }
+  | { id: string; role: 'system'; kind: 'answer'; at: number; q: string; answer?: unknown; pending?: boolean; error?: string; doneAt?: number }
 export type RunEx = Run & { detail?: boolean; messages?: Msg[]; batches?: { id: string; at: number; fileIds: string[] }[] }
 let mseq = 0
 const mid = () => 'm' + Date.now().toString(36) + (mseq++).toString(36)
@@ -280,7 +280,7 @@ export async function rerunAs(runId: string, pids: string[], domain: Run['domain
     let f = sent.get(runId)?.get(pid)
     if (!f) {
       try {
-        const url = isApi ? `${(await import('../api/papers')).pdfApiUrl(pid, r.domain)}?run=${encodeURIComponent(runId)}` : pdfUrl(pid, r.domain)
+        const url = isApi ? (await import('../api/papers')).pdfApiUrl(pid, r.domain, runId) : pdfUrl(pid, r.domain)
         const headers = isApi ? await (await import('../api/client')).authHeaders() : {}
         const res = await fetch(url, { headers, credentials: 'include' })
         if (!res.ok) continue
@@ -294,10 +294,14 @@ export async function rerunAs(runId: string, pids: string[], domain: Run['domain
   return startRun(files, domain, { title })
 }
 
-export async function setRunDomain(id: string, domain: Run['domain']) {
-  if (isApi) return
+export async function setRunDomain(id: string, domain: Run['domain']): Promise<string | null> {
+  if (isApi) {
+    const cur = runOf(id)
+    if (!cur || cur.domain === domain) return null
+    return rerunAs(id, cur.files.map((f) => f.id), domain)
+  }
   const r = runOf(id)
-  if (!r || r.domain === domain) return
+  if (!r || r.domain === domain) return null
   const old = r.domain
   for (const f of r.files) {
     const u = pdfUrl(f.id, old)
@@ -307,10 +311,16 @@ export async function setRunDomain(id: string, domain: Run['domain']) {
   r.domain = domain
   rerun(id)
   toast(`Область разбора: ${DOMAIN_RU[domain]}`)
+  return id
 }
 
 export async function addToRun(id: string, files: File[]): Promise<number> {
-  if (isApi) { toast('Догрузка файлов в разбор — в разработке'); return 0 }
+  if (isApi) {
+    Object.assign(sending, { phase: 'send', pct: 0 })
+    try {
+      return await (await import('../api/runs')).addFilesApi(id, files, (p) => { sending.pct = Math.min(100, Math.round(p * 100)) })
+    } finally { Object.assign(sending, { phase: '', pct: 0 }) }
+  }
   const r = runOf(id) as RunEx | undefined
   if (!r) return 0
   const { list } = await collect(files, new Set(r.files.map((f) => f.id)), r.domain)
@@ -324,13 +334,23 @@ export async function addToRun(id: string, files: File[]): Promise<number> {
 }
 
 export function renameRun(id: string, title: string) {
-  if (isApi) return
   const r = runOf(id)
   const t = title.trim()
-  if (r && t) r.title = t
+  if (!r || !t || t === r.title) return
+  const old = r.title
+  r.title = t
+  if (isApi) void import('../api/runs').then((m) => m.patchRun(id, { title: t })).then((ok) => { if (!ok) r.title = old })
 }
 export function deleteRun(id: string) {
-  if (isApi) return
+  if (isApi) {
+    const title = runOf(id)?.title ?? ''
+    void import('../api/runs').then((m) => m.deleteApiRun(id)).then((ok) => {
+      if (!ok) return
+      if (reviewScope.value === id) setReviewScope(sortedRuns()[0]?.id ?? '')
+      toast(`Разбор «${title}» удалён`)
+    })
+    return
+  }
   const i = runs.findIndex((r) => r.id === id)
   if (i < 0) return
   stopRun(id, true)
@@ -339,7 +359,7 @@ export function deleteRun(id: string) {
   toast(`Разбор «${r!.title}» удалён`, { label: 'Вернуть', run: () => { if (!runOf(r!.id)) runs.splice(Math.min(i, runs.length), 0, r!) } })
 }
 export function rerun(id: string) {
-  if (isApi) return
+  if (isApi) { void import('../api/runs').then((m) => m.restartApiRun(id)); return }
   const r = runOf(id)
   if (!r) return
   stopRun(id, true)
@@ -347,7 +367,7 @@ export function rerun(id: string) {
   pump()
 }
 export function stopRun(id: string, quiet = false) {
-  if (isApi) return
+  if (isApi) { if (!quiet) void import('../api/runs').then((m) => m.stopApiRun(id)); return }
   const r = runOf(id)
   if (!r) return
   for (const f of r.files) {
@@ -379,6 +399,7 @@ export interface RunSummary {
   open: number
   accepted: number
   byCheck?: { check: string; total: number }[]
+  best?: { metric: string; pid: string; rid: string; value: number; unit: string; corrected: boolean }[]
   coverage: { metric: string; share: number; n: number }[]
   domain: Run['domain']
   configurations: number
@@ -442,9 +463,13 @@ function remoteSummary(id: string): RunSummary {
     errors: s?.files_error ?? n('error'),
     values: s?.results ?? r.apiResults ?? 0,
     issues: s?.issues_total ?? r.apiIssues ?? 0,
-    open: s?.issues_total ?? r.apiIssues ?? 0,
+    open: s?.issues_open ?? r.apiIssuesOpen ?? s?.issues_total ?? r.apiIssues ?? 0,
     accepted: 0,
-    byCheck: s?.issues_by_check.map((c) => ({ check: c.check_name, total: c.total })),
+    byCheck: issueStats[id]?.filter((c) => c.count > 0).map((c) => ({ check: c.check_name, total: c.count })) ?? s?.issues_by_check.map((c) => ({ check: c.check_name, total: c.total })),
+    best: rag ? [] : METRICS.flatMap((m) => {
+      const b = s?.best_values?.[m]
+      return b ? [{ metric: m, pid: b.pid, rid: b.result_id, value: b.value, unit: b.unit ?? '', corrected: !!b.corrected }] : []
+    }),
     coverage: rag
       ? (s?.coverage ?? []).slice(0, 8).map((c) => ({ metric: c.metric, n: c.n, share: c.total ? c.n / c.total : 0 }))
       : METRICS.map((m) => {
@@ -494,10 +519,15 @@ export function takeInbox(): { files: File[]; folder: string } {
 }
 
 export function togglePinRun(id: string) {
-  if (isApi) return
   const r = runOf(id)
   if (!r) return
   r.pinned = !r.pinned
+  if (isApi) {
+    const now = r.pinned
+    void import('../api/runs').then((m) => m.patchRun(id, { pinned: now })).then((ok) => { if (!ok) r.pinned = !now })
+    toast(now ? `Разбор «${r.title}» закреплён` : `Разбор «${r.title}» откреплён`)
+    return
+  }
   toast(r.pinned ? `Разбор «${r.title}» закреплён` : `Разбор «${r.title}» откреплён`, { label: 'Отменить', run: () => { r.pinned = !r.pinned } })
 }
 
@@ -515,20 +545,25 @@ async function respond(runId: string, msgId: string) {
   m.error = undefined
   const started = Date.now()
   try {
-    const fn = await loadAsk()
-    if (!fn) throw new Error('Ответы пока недоступны')
-    const ans = await fn(m.q, runPapersInScope(runId), runOf(runId)?.domain ?? 'solar')
+    let ans: unknown
+    if (isApi) {
+      const api = await import('../api/extra')
+      try { ans = await api.askApi(runId, m.q, []) } catch (e) { throw new Error(api.errText(e, 'Не удалось получить ответ')) }
+    } else {
+      const fn = await loadAsk()
+      if (!fn) throw new Error('Ответы пока недоступны')
+      ans = await fn(m.q, runPapersInScope(runId), runOf(runId)?.domain ?? 'solar')
+    }
     const wait = 600 - (Date.now() - started)
     if (wait > 0) await new Promise((res) => setTimeout(res, wait))
     const cur = messagesOf(runId).find((x) => x.id === msgId)
-    if (cur && cur.kind === 'answer') { cur.answer = ans; cur.pending = false }
+    if (cur && cur.kind === 'answer') { cur.answer = ans; cur.pending = false; cur.doneAt = Date.now() }
   } catch (e) {
     const cur = messagesOf(runId).find((x) => x.id === msgId)
     if (cur && cur.kind === 'answer') { cur.pending = false; cur.error = e instanceof Error ? e.message : 'Не удалось ответить' }
   }
 }
 export function askRun(id: string, text: string) {
-  if (isApi) return
   const q = text.trim()
   if (!q || !runOf(id)) return
   const msgs = messagesOf(id)

@@ -15,14 +15,16 @@ import { useScrollMemory } from '../viewState'
 import { plural } from '../search'
 import { fmtInt } from '../fmt'
 import { dataLink } from '../dataTabs'
-import { DOMAIN_RU, NODATA_TEXT, checkLabel, metricLabel, paperPath, publication, resultsOf, reviewInherited, reviewOf, type RunFile } from '../case'
+import { DOMAIN_RU, NODATA_TEXT, checkLabel, metricLabel, paperPath, publication, resultLink, resultsOf, reviewInherited, reviewOf, unitRu, type RunFile } from '../case'
 import { ragMetricCase, ragLoad, ragPublication, ragResultsOf, ragSummaryOf } from '../case/rag'
 import {
-  startRun, rerunAs, addToRun, askRun, deleteRun, isRunning, messagesOf, renameRun, rerun, retryAnswer, runOf, runPapers, runPapersInScope, runSummary, stopRun,
+  rerunAs, addToRun, askRun, deleteRun, isRunning, messagesOf, renameRun, rerun, retryAnswer, runOf, runPapers, runPapersInScope, runSummary, stopRun,
   setRunDomain, togglePinRun,
 } from '../case/runs'
-import { downloadRunSet } from '../case/runSet'
-import { isApi, DEV_TEXT } from '../config'
+import { downloadRunData, downloadRunPassport, downloadRunSet } from '../case/runSet'
+import { isApi } from '../config'
+import { toast } from '../store'
+import { askConfirm } from '../prompt'
 import { runsLoad } from '../api/state'
 import { useBusy } from '../useBusy'
 import { loadRun, summaryFailed, summaryLoading, retrySummary } from '../api/runs'
@@ -120,7 +122,10 @@ const outFiles = computed(() => (running.value ? [] : (run.value?.files ?? []).f
 const otherDomain = computed(() => (run.value?.domain === 'rag' ? 'solar' : 'rag'))
 const otherName = computed(() => (otherDomain.value === 'rag' ? 'RAG' : 'солнечные элементы'))
 const redoPick = ref(new Set<string>())
-watch(() => outFiles.value.map((f) => f.id).join(','), () => { redoPick.value = new Set(outFiles.value.map((f) => f.id)) }, { immediate: true })
+const suggested = computed(() => outFiles.value.filter((f) => f.suggestedDomain === otherDomain.value))
+watch(() => outFiles.value.map((f) => f.id + (f.suggestedDomain ?? '')).join(','), () => {
+  redoPick.value = new Set((suggested.value.length ? suggested.value : outFiles.value).map((f) => f.id))
+}, { immediate: true })
 function toggleRedo(id: string) {
   const s = new Set(redoPick.value)
   if (s.has(id)) s.delete(id)
@@ -140,7 +145,10 @@ async function redo() {
 }
 const titleOf = (f: RunFile) => (isRag.value ? ragPublication(f.id) : publication(f.id))?.title || f.name
 const statusText = (f: RunFile) => (f.status === 'nodata' ? ST.nodata : f.reason || ST[f.status])
-const statusTip = (f: RunFile) => (f.status === 'nodata' ? NODATA_TEXT : f.reason && f.reason.length > 30 ? f.reason : undefined)
+const statusTip = (f: RunFile) => {
+  if (f.status === 'ocr' && f.ocrConfidence != null) return `Скан, текст распознан. Надёжность распознавания: ${Math.round(f.ocrConfidence * 100)} %`
+  return f.status === 'nodata' ? NODATA_TEXT : f.reason && f.reason.length > 30 ? f.reason : undefined
+}
 
 const fmtTime = (t: number) => {
   const d = new Date(t)
@@ -160,6 +168,8 @@ const covAll = ref(false)
 const coverage = computed(() => sum.value.coverage.filter((c) => c.n > 0))
 const covFull = computed(() => coverage.value.filter((c) => c.n >= pids.value.length))
 const covPart = computed(() => coverage.value.filter((c) => c.n < pids.value.length).sort((a, b) => (isRag.value ? 0 : Number(MAIN.includes(b.metric)) - Number(MAIN.includes(a.metric))) || b.n - a.n))
+const bestTo = (pid: string, rid: string) => { const l = resultLink(pid, rid); return { ...l, query: { ...l.query, run: props.id } } }
+const bestVal = (v: number, u: string) => `${String(+v.toPrecision(4)).replace('.', ',')}${u ? ' ' + unitRu(u) : ''}`
 const mName = (m: string) => (isRag.value ? ragMetricCase(m) : metricLabel(m))
 const COV_N = 4
 const covShown = computed(() => (covAll.value ? covPart.value : covPart.value.slice(0, COV_N)))
@@ -181,7 +191,7 @@ const editing = ref(false)
 const draft = ref('')
 const titleEl = ref<HTMLInputElement | null>(null)
 async function startEdit() {
-  if (!run.value || isApi) return
+  if (!run.value) return
   menu.value = false
   draft.value = run.value.title
   editing.value = true
@@ -203,29 +213,40 @@ function doRerun() {
   menu.value = false
   rerun(props.id)
 }
-function doDomain() {
+async function doDomain() {
   menu.value = false
   const r = run.value
-  if (r) void setRunDomain(r.id, r.domain === 'rag' ? 'solar' : 'rag')
+  if (!r) return
+  const id = await setRunDomain(r.id, r.domain === 'rag' ? 'solar' : 'rag')
+  if (id && id !== r.id) void router.push('/run/' + id)
 }
-function doDelete() {
+async function doDelete() {
   menu.value = false
+  if (isApi && !(await askConfirm('Удалить разбор?', `«${run.value?.title ?? ''}» и все правки в нём будут удалены. Вернуть разбор нельзя.`))) return
   deleteRun(props.id)
   void router.push('/app')
 }
 
 const { busy: setBusy, run: runSet } = useBusy()
-const downloadSet = (e?: Event) => { menu.value = false; return runSet(() => downloadRunSet(props.id), e) }
+const downloadSet = (e?: Event) => { menu.value = false; dl.value = false; return runSet(() => downloadRunSet(props.id), e) }
+const dl = ref(false)
+const dlWrap = ref<HTMLElement>()
+const onDocDl = (e: MouseEvent) => { if (dl.value && !dlWrap.value?.contains(e.target as Node)) dl.value = false }
+onMounted(() => document.addEventListener('click', onDocDl))
+onBeforeUnmount(() => document.removeEventListener('click', onDocDl))
+function dlData(fmt: 'json' | 'xlsx') {
+  dl.value = false
+  void runSet(async () => { if (!(await downloadRunData(props.id, fmt))) void router.push(dataLink('/export', props.id)) })
+}
+function dlPassport(fmt: 'md' | 'json') {
+  dl.value = false
+  void runSet(() => downloadRunPassport(props.id, fmt))
+}
 
 const canDownload = computed(() => (isApi || !running.value) && pids.value.length > 0)
 const paperTo = (pid: string) => ({ path: paperPath(pid, run.value?.domain ?? 'solar'), query: { run: props.id } })
 
 async function add(files: File[]) {
-  if (isApi) {
-    const id = await startRun(files, run.value?.domain ?? 'solar')
-    if (id) void router.push('/run/' + id)
-    return
-  }
   const n = await addToRun(props.id, files)
   if (n) {
     await nextTick()
@@ -252,7 +273,23 @@ async function ask(text: string) {
 }
 const ASK = import.meta.glob<{ suggestionsFor?: (pids: string[], domain?: 'solar' | 'rag') => string[] }>('../case/ask.ts', { eager: true })
 const askMod = Object.values(ASK)[0]
-const suggestions = computed(() => (!isApi && pids.value.length ? (askMod?.suggestionsFor?.(pids.value, run.value?.domain ?? 'solar') ?? []).slice(0, 4) : []))
+const serverSugg = ref<string[]>([])
+watch(() => [props.id, running.value] as const, ([id, busy]) => {
+  if (!isApi || busy) return
+  void import('../api/extra').then((m) => m.askSuggestionsApi(id)).then((l) => { if (props.id === id) serverSugg.value = Array.isArray(l) ? l.slice(0, 4) : [] }).catch(() => { serverSugg.value = [] })
+}, { immediate: true })
+const suggestions = computed(() => (isApi ? serverSugg.value : pids.value.length ? (askMod?.suggestionsFor?.(pids.value, run.value?.domain ?? 'solar') ?? []).slice(0, 4) : []))
+const timeOf = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+const copied = ref('')
+async function copyAnswer(id: string, a: unknown) {
+  const cites = a && typeof a === 'object' && Array.isArray((a as { cites?: unknown }).cites) ? (a as { cites: { label?: string }[] }).cites.map((c, i) => `[${i + 1}] ${c.label ?? ''}`) : []
+  const txt = [answerText(a), ...(cites.length ? ['', ...cites] : [])].join('\n').trim()
+  try {
+    await navigator.clipboard.writeText(txt)
+    copied.value = id
+    window.setTimeout(() => { if (copied.value === id) copied.value = '' }, 1800)
+  } catch { toast('Не удалось скопировать — браузер не дал доступ к буферу обмена') }
+}
 const answerText = (a: unknown) => {
   if (a && typeof a === 'object' && 'text' in a && typeof (a as { text: unknown }).text === 'string') return (a as { text: string }).text
   return typeof a === 'string' ? a : ''
@@ -279,20 +316,34 @@ const answerText = (a: unknown) => {
             <p class="head__meta">{{ fmtDate(run.createdAt) }}</p>
             <p class="head__dom">Область: {{ DOMAIN_RU[run.domain] }}</p>
           </div>
-          <button v-if="canDownload" type="button" class="btn btn--soft btn--sm head__dl" :disabled="setBusy" aria-label="Скачать набор для сдачи" data-tip="ZIP: 7 таблиц по шаблону и паспорт" @click="downloadSet">
-            <UiSpinner v-if="setBusy" :size="14" tone="current" /><Icon v-else name="export" :size="16" /><span class="head__dlt">{{ setBusy ? 'Готовим архив…' : 'Скачать набор' }}</span>
-          </button>
+          <div v-if="canDownload" ref="dlWrap" class="head__menu">
+            <button type="button" class="btn btn--soft btn--sm head__dl" :disabled="setBusy" aria-haspopup="menu" :aria-expanded="dl" :data-tip="dl ? undefined : 'Выбрать, что скачать'" @click.stop="dl = !dl">
+              <UiSpinner v-if="setBusy" :size="14" tone="current" /><Icon v-else name="export" :size="16" /><span class="head__dlt">{{ setBusy ? 'Готовим файл…' : 'Скачать' }}</span><Icon name="chevron-down" :size="14" class="head__chev" :class="{ 'is-open': dl }" />
+            </button>
+            <Transition name="pop">
+              <div v-if="dl" class="menu head__pop" role="menu">
+                <button type="button" class="menu__item menu__item--2" role="menuitem" @click="downloadSet()"><Icon name="export" :size="16" /><span>Набор для сдачи<small>ZIP: 7 таблиц и паспорт</small></span></button>
+                <button type="button" class="menu__item menu__item--2" role="menuitem" @click="dlData('json')"><Icon name="code" :size="16" /><span>Один файл JSON<small>Все таблицы вместе</small></span></button>
+                <button type="button" class="menu__item menu__item--2" role="menuitem" @click="dlData('xlsx')"><Icon name="sheet" :size="16" /><span>Файл Excel<small>Только значения, одним листом</small></span></button>
+                <div class="menu__sep" role="separator" />
+                <button type="button" class="menu__item menu__item--2" role="menuitem" @click="dlPassport('md')"><Icon name="book" :size="16" /><span>Паспорт набора · Markdown<small>Поля, правила и критерии</small></span></button>
+                <button type="button" class="menu__item menu__item--2" role="menuitem" @click="dlPassport('json')"><Icon name="book" :size="16" /><span>Паспорт набора · JSON<small>То же для программ</small></span></button>
+                <div class="menu__sep" role="separator" />
+                <RouterLink :to="dataLink('/export', run.id)" class="menu__item" role="menuitem" @click="dl = false"><Icon name="arrow-right" :size="16" />Все форматы и предпросмотр</RouterLink>
+              </div>
+            </Transition>
+          </div>
           <div ref="menuWrap" class="head__menu">
             <button type="button" class="icon-btn" aria-label="Действия с разбором" :data-tip="menu ? undefined : 'Действия с разбором'" :aria-expanded="menu" aria-haspopup="menu" @click.stop="menu = !menu"><Icon name="dots" :size="18" /></button>
             <Transition name="pop">
               <div v-if="menu" class="menu head__pop" role="menu">
-                <button type="button" class="menu__item" role="menuitem" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="startEdit"><Icon name="edit" :size="16" />Переименовать</button>
-                <button type="button" class="menu__item" role="menuitem" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="menu = false; togglePinRun(run.id)"><Icon name="pin" :size="16" />{{ run.pinned ? 'Открепить' : 'Закрепить' }}</button>
-                <RouterLink v-if="!isApi" :to="dataLink('/export', run.id)" class="menu__item" role="menuitem" @click="menu = false"><Icon name="export" :size="16" />Другие форматы выгрузки</RouterLink>
-                <button type="button" class="menu__item" role="menuitem" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="doRerun"><Icon name="undo" :size="16" />Разобрать заново</button>
-                <button type="button" class="menu__item" role="menuitem" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="doDomain"><Icon name="columns" :size="16" />Сменить область</button>
+                <button type="button" class="menu__item" role="menuitem" @click="startEdit"><Icon name="edit" :size="16" />Переименовать</button>
+                <button type="button" class="menu__item" role="menuitem" @click="menu = false; togglePinRun(run.id)"><Icon name="pin" :size="16" />{{ run.pinned ? 'Открепить' : 'Закрепить' }}</button>
+                <RouterLink :to="dataLink('/export', run.id)" class="menu__item" role="menuitem" @click="menu = false"><Icon name="export" :size="16" />Другие форматы выгрузки</RouterLink>
+                <button type="button" class="menu__item" role="menuitem" @click="doRerun"><Icon name="undo" :size="16" />Разобрать заново</button>
+                <button type="button" class="menu__item" role="menuitem" @click="doDomain"><Icon name="columns" :size="16" />{{ isApi ? `Разобрать как ${run.domain === 'rag' ? 'солнечные' : 'RAG'}` : 'Сменить область' }}</button>
                 <div class="menu__sep" />
-                <button type="button" class="menu__item menu__item--danger" role="menuitem" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="doDelete"><Icon name="trash" :size="16" />Удалить</button>
+                <button type="button" class="menu__item menu__item--danger" role="menuitem" @click="doDelete"><Icon name="trash" :size="16" />Удалить</button>
               </div>
             </Transition>
           </div>
@@ -323,7 +374,7 @@ const answerText = (a: unknown) => {
                     <span class="files__lead">Разбираем {{ m.fileIds.length }} {{ plural(m.fileIds.length, ['статью', 'статьи', 'статей']) }}</span>
                     <span class="files__pct num">{{ batchProgress(filesOf(m.fileIds)) }} %</span>
                     <span v-if="fmtEta(batchEta(filesOf(m.fileIds)))" class="files__eta num" data-tip="Примерное время до конца разбора">осталось {{ fmtEta(batchEta(filesOf(m.fileIds))) }}</span>
-                    <button type="button" class="btn btn--ghost btn--sm" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="stopRun(run.id)">Остановить</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @click="stopRun(run.id)">Остановить</button>
                   </div>
                   <UiProgress :value="batchProgress(filesOf(m.fileIds))" size="md" label="Общий прогресс" :slow="isApi" />
                 </template>
@@ -367,6 +418,7 @@ const answerText = (a: unknown) => {
                         <input type="checkbox" :checked="redoPick.has(f.id)" @change="toggleRedo(f.id)" />
                         <span class="redo__id num">{{ f.id }}</span>
                         <span class="redo__name" :data-tip="titleOf(f)">{{ titleOf(f) }}</span>
+                        <span v-if="f.suggestedDomain === otherDomain" class="redo__hint-chip">похоже на {{ otherDomain === 'rag' ? 'RAG' : 'солнечные' }}</span>
                       </label>
                     </li>
                   </ul>
@@ -429,6 +481,21 @@ const answerText = (a: unknown) => {
                     </UiLoad>
                   </section>
 
+                  <section v-if="sum.best?.length" class="blk" aria-label="Лучшие значения">
+                    <div class="cov card">
+                      <p class="cov__h">Лучшие значения <span>по статьям разбора, с учётом ваших правок</span></p>
+                      <ul class="best" role="list">
+                        <li v-for="b in sum.best" :key="b.metric">
+                          <RouterLink :to="bestTo(b.pid, b.rid)" class="best__r" :data-tip="`${mName(b.metric)} · ${b.pid} · ${b.rid}${b.corrected ? ' · исправлено вами' : ''}`">
+                            <span class="cov__m">{{ mName(b.metric) }}</span>
+                            <b class="num">{{ bestVal(b.value, b.unit) }}</b>
+                            <span class="cov__v num">{{ b.pid }}</span>
+                          </RouterLink>
+                        </li>
+                      </ul>
+                    </div>
+                  </section>
+
                   <section class="blk" aria-label="Замечания">
                     <div class="blk__h">
                       <h2>Замечания</h2>
@@ -462,6 +529,12 @@ const answerText = (a: unknown) => {
                 </div>
                 <component :is="CaseAnswer" v-else-if="CaseAnswer" :answer="m.answer" :asked="askedList" @ask="ask" />
                 <p v-else class="ans__p">{{ answerText(m.answer) }}</p>
+                <div v-if="!m.error && m.answer" class="ans__meta">
+                  <time class="num" :datetime="new Date(m.doneAt ?? m.at).toISOString()">{{ timeOf(m.doneAt ?? m.at) }}</time>
+                  <button type="button" class="ans__copy" :aria-label="copied === m.id ? 'Скопировано' : 'Копировать ответ'" :data-tip="copied === m.id ? undefined : 'Копировать ответ'" @click="copyAnswer(m.id, m.answer)">
+                    <Icon :name="copied === m.id ? 'check' : 'copy'" :size="15" />{{ copied === m.id ? 'Скопировано' : 'Копировать' }}
+                  </button>
+                </div>
               </UiLoad>
             </div>
           </div>
@@ -471,7 +544,7 @@ const answerText = (a: unknown) => {
     </div>
 
     <div class="rv__dock">
-      <FileComposer :ask="!isApi" :placeholder="isApi ? 'Вопросы по разбору — в разработке. Перетащите PDF для нового разбора' : 'Спросите о результатах или добавьте PDF'" :send-label="isApi ? 'Разобрать' : 'Добавить'" @send="add" @ask="ask" />
+      <FileComposer ask placeholder="Спросите о результатах или добавьте PDF" send-label="Добавить" @send="add" @ask="ask" />
     </div>
   </div>
 
@@ -513,6 +586,12 @@ const answerText = (a: unknown) => {
 .head__dom.is-warn { color: var(--warn, var(--ink-2)); }
 .head__menu { position: relative; flex: none; }
 .head__dl { flex: none; margin-top: 2px; }
+.head__chev { margin-left: -2px; opacity: .6; transition: transform var(--t-fast) var(--ease); }
+.head__chev.is-open { transform: rotate(180deg); }
+.menu__item--2 { height: auto; min-height: 52px; align-items: flex-start; padding: var(--s2) var(--s3); }
+.menu__item--2 > .ico, .menu__item--2 > svg { margin-top: 2px; }
+.menu__item--2 > span { display: grid; gap: 3px; text-align: left; line-height: 1.3; }
+.menu__item--2 small { font-size: var(--fs-xs); color: var(--muted); }
 .head__pop .menu__item:disabled { opacity: 0.45; cursor: default; }
 .head__pop { position: absolute; right: 0; top: calc(100% + var(--s1)); min-width: 260px; }
 .head__pop .menu__item { white-space: nowrap; }
@@ -536,6 +615,10 @@ const answerText = (a: unknown) => {
 .ans { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-content: start; gap: var(--s3); min-width: 0; }
 .ans__av { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--card); box-shadow: 0 0 0 1px var(--line); }
 .ans__body { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--s5); padding-top: 2px; }
+.ans__meta { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s3); font-size: var(--fs-xs); color: var(--muted); }
+.ans__copy { display: inline-flex; align-items: center; gap: var(--s1); min-height: 28px; padding: 0 var(--s2); margin-left: calc(-1 * var(--s1)); border-radius: var(--r-sm); color: var(--muted); }
+.ans__copy:hover { background: var(--bg-2); color: var(--ink); }
+@media (max-width: 768px) { .ans__copy { min-height: 40px; } }
 .ans__p { color: var(--ink-2); line-height: 1.6; }
 .files { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s2); min-width: 0; }
 .files__top { display: flex; align-items: center; gap: var(--s3); }
@@ -569,6 +652,7 @@ const answerText = (a: unknown) => {
 .redo__row input { flex: none; width: 16px; height: 16px; accent-color: var(--blue); }
 .redo__id { flex: none; min-width: 3.5em; font-size: var(--fs-xs); font-weight: 500; color: var(--ink-2); }
 .redo__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--muted); }
+.redo__hint-chip { flex: none; margin-left: auto; padding: 2px var(--s2); border-radius: var(--r-pill); background: var(--blue-wash); color: var(--blue); font-size: var(--fs-xs); white-space: nowrap; }
 .redo__act { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
 .redo__hint { font-size: var(--fs-xs); color: var(--faint); }
 .fr__pct { flex: none; min-width: 3.2em; text-align: right; font-size: var(--fs-xs); color: var(--muted); }
@@ -588,6 +672,11 @@ const answerText = (a: unknown) => {
 .cov__bar { height: 4px; border-radius: var(--r-pill); background: var(--bg-2); overflow: hidden; }
 .cov__bar i { display: block; height: 100%; border-radius: inherit; background: var(--ink-2); transition: width var(--t-slow) var(--ease); }
 .cov__v { min-width: 5.5em; text-align: right; font-size: var(--fs-xs); color: var(--muted); }
+.best { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s1) var(--s6); }
+.best__r { display: grid; grid-template-columns: minmax(0, 9em) minmax(0, 1fr) auto; align-items: center; gap: var(--s3); min-height: 32px; padding: 0 var(--s2); margin: 0 calc(-1 * var(--s2)); border-radius: var(--r-sm); font-size: var(--fs-sm); color: var(--ink); text-decoration: none; }
+.best__r:hover { background: var(--bg-2); }
+.best__r b { font-weight: 600; }
+@media (max-width: 768px) { .best { grid-template-columns: minmax(0, 1fr); } .best__r { min-height: 44px; } }
 .cov__more { justify-self: start; font-size: var(--fs-sm); }
 .blk { display: grid; gap: var(--s3); min-width: 0; }
 .blk__h { display: flex; align-items: center; gap: var(--s3); }

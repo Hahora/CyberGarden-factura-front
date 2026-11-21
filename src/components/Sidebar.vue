@@ -10,7 +10,7 @@ import UiEmpty from './UiEmpty.vue'
 import { runsLoad } from '../api/state'
 import { loadRun } from '../api/runs'
 import { reloadRuns } from '../api/auth'
-import { askText } from '../prompt'
+import { askConfirm, askText } from '../prompt'
 import { DATA_PATHS } from '../dataTabs'
 import {
   state, chatsOf, chatOf, openIssues, paperOf, sortedProjects, picker, toast, pinChat, pinnedChats, initials, ACCENTS,
@@ -19,7 +19,7 @@ import {
 } from '../store'
 import { sevDot } from '../query'
 import { FEATURES } from '../features'
-import { isApi, DEV_TEXT } from '../config'
+import { isApi } from '../config'
 import { logout as apiLogout } from '../api/auth'
 import { openIssuesOf, paperPath, publication, ragPublication, type Domain } from '../case'
 import { deleteRun, inbox, renameRun, runOf, runPapers, sortedRuns, togglePinRun } from '../case/runs'
@@ -210,8 +210,9 @@ async function renameRunAsk(id: string) {
   const name = await askText({ title: 'Переименовать разбор', value: r.title, placeholder: 'Название' })
   if (name != null) renameRun(id, name)
 }
-function doDeleteRun(id: string) {
+async function doDeleteRun(id: string) {
   closeMenu()
+  if (isApi && !(await askConfirm('Удалить разбор?', `«${runOf(id)?.title ?? ''}» и все правки в нём будут удалены. Вернуть разбор нельзя.`))) return
   if (activeRunId.value === id) go('/app')
   deleteRun(id)
 }
@@ -664,10 +665,10 @@ function doMove(id: string, projectId: string | null) {
           <template v-else-if="menu.type === 'run' && menuRun">
             <button class="menu__item" @click="downloadRun(menuRun.id)"><Icon name="export" :size="16" />Скачать набор для сдачи</button>
             <div class="menu__sep" />
-            <button class="menu__item" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="togglePinRun(menuRun.id); closeMenu()"><Icon name="pin" :size="16" />{{ menuRun.pinned ? 'Открепить' : 'Закрепить' }}</button>
-            <button class="menu__item" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="renameRunAsk(menuRun.id)"><Icon name="edit" :size="16" />Переименовать</button>
+            <button class="menu__item" @click="togglePinRun(menuRun.id); closeMenu()"><Icon name="pin" :size="16" />{{ menuRun.pinned ? 'Открепить' : 'Закрепить' }}</button>
+            <button class="menu__item" @click="renameRunAsk(menuRun.id)"><Icon name="edit" :size="16" />Переименовать</button>
             <div class="menu__sep" />
-            <button class="menu__item menu__item--danger" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="doDeleteRun(menuRun.id)"><Icon name="trash" :size="16" />Удалить</button>
+            <button class="menu__item menu__item--danger" @click="doDeleteRun(menuRun.id)"><Icon name="trash" :size="16" />Удалить</button>
           </template>
 
           <template v-else-if="menu.type === 'profile'">

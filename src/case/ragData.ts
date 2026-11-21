@@ -1,5 +1,7 @@
 import { shallowReactive } from 'vue'
 import { isApi } from '../config'
+import { adoptEdits } from '../api/papers'
+import type { ServerIssueState, ServerReview } from '../api/edits'
 import { RAG_COLUMNS, RAG_PUBLICATIONS, RAG_SUMMARY } from './ragSummary'
 import type {
   PublicationRow, RagConfigRow, RagDatasetRow, RagExperimentRow, RagIssueRow, RagPaperSummary, RagResultRow, RagTables, RagTaskRow,
@@ -18,7 +20,9 @@ interface ApiRagSummary {
   counts?: Partial<Record<string, number>>
   metrics?: { metric_name: string; n: number }[]
   issues?: RagIssueRow[]
-  meta?: { is_scan?: boolean; file_status?: string }
+  meta?: { is_scan?: boolean; file_status?: string; ocr_confidence?: number | null; suggested_domain?: 'solar' | 'rag' | null }
+  reviews?: Record<string, ServerReview>
+  issue_states?: Record<string, ServerIssueState>
 }
 type Page<T> = { data: T[]; total: number; next_cursor: string | null }
 const apiSum = shallowReactive<Record<string, ApiRagSummary | 'missing'>>({})
@@ -32,7 +36,7 @@ function loadSum(pid: string, run: string): Promise<ApiRagSummary | undefined> {
   if (!p) {
     p = api()
       .then(({ get }) => get<ApiRagSummary>(`/papers/rag/${encodeURIComponent(pid)}`, { run }, { silent: true }))
-      .then((s) => { apiSum[k] = s; return s }, () => { apiSum[k] = 'missing'; return undefined })
+      .then((s) => { adoptEdits(run, 'rag', pid, s.reviews, s.issue_states); apiSum[k] = s; return s }, () => { apiSum[k] = 'missing'; return undefined })
       .finally(() => sumPending.delete(k))
     sumPending.set(k, p)
   }
@@ -150,6 +154,22 @@ async function fetchLocal(pid: string): Promise<RagTables> {
     datasets: toRows<RagDatasetRow>(raw, 'datasets'), tasks: toRows<RagTaskRow>(raw, 'tasks'),
     experiments: toRows<RagExperimentRow>(raw, 'experiments'), issues: toRows<RagIssueRow>(raw, 'issues'),
   }
+}
+const sumTimers = new Map<string, number>()
+export function ragRefreshEdits(pid: string, run: string) {
+  const k = K(pid, run)
+  window.clearTimeout(sumTimers.get(k))
+  sumTimers.set(k, window.setTimeout(() => {
+    sumTimers.delete(k)
+    void api()
+      .then(({ get }) => get<ApiRagSummary>(`/papers/rag/${encodeURIComponent(pid)}`, { run }, { silent: true }))
+      .then((s) => {
+        adoptEdits(run, 'rag', pid, s.reviews, s.issue_states)
+        apiSum[k] = s
+        const c = cache[k]
+        if (c && s.issues) cache[k] = { ...c, issues: s.issues }
+      }, () => {})
+  }, 400))
 }
 export function ragLoad(pid: string): Promise<void> {
   const run = runOfScope()

@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { computed, toRef } from 'vue'
+import { computed, reactive, toRef, watch } from 'vue'
+import { isApi } from '../config'
+import { get, request } from '../api/client'
+import { errText } from '../api/edits'
 import { useRouter } from 'vue-router'
 import DataPage from '../components/DataPage.vue'
 import UiSelect from '../components/UiSelect.vue'
@@ -9,8 +12,8 @@ import UiSkeleton from '../components/UiSkeleton.vue'
 import { plural } from '../search'
 import { openDeep, useViewState } from '../viewState'
 import { state, toast } from '../store'
-import { reviewOf, setReview, resetReview, type Review } from '../case'
-import { dataPids, dataRun, dataRunTitle } from '../dataTabs'
+import { resultLink, reviewOf, setReview, resetReview, type Review } from '../case'
+import { dataPids, dataRun, dataRunTitle, useDataReady } from '../dataTabs'
 import { J_FILTER, J_VERB, jLink, jPaper, jPlace, journal, type JEntry, type JKind } from '../journal'
 
 const router = useRouter()
@@ -18,6 +21,7 @@ const router = useRouter()
 const ui = useViewState('history', () => ({ kind: 'all' as JKind | 'all', pid: 'all' }))
 const kind = toRef(ui, 'kind')
 const pid = toRef(ui, 'pid')
+const ready = useDataReady(dataPids)
 const all = computed(() => journal(dataPids.value))
 const kindOpts = J_FILTER.map((a) => ({ value: a.id as string, label: a.id === 'all' ? 'Все действия' : a.label }))
 const pids = computed(() => [...new Set(all.value.map((e) => e.pid))].sort())
@@ -54,21 +58,66 @@ const TONE: Record<JKind, string> = { accepted: 'dot--ok', fixed: 'dot--blue', r
 const runQ = computed(() => dataRun.value || undefined)
 const open = (e: JEntry) => void openDeep(router, jLink(e, runQ.value))
 
+interface HAction { id: string; action: 'review' | 'batch' | 'issue' | 'reset' | string; label: string; run_id: string; undone: boolean; at: string; changes?: unknown }
+const srv = reactive({ list: [] as HAction[], loaded: false, busy: '' })
+async function loadHist() {
+  try {
+    const r = await get<{ data: HAction[] }>('/history', { run: dataRun.value || undefined, limit: 50 }, { silent: true })
+    srv.list = r.data ?? []
+  } catch (e) { toast(errText(e, 'Не удалось загрузить журнал')) } finally { srv.loaded = true }
+}
+if (isApi) watch(dataRun, () => void loadHist(), { immediate: true })
+const A_VERB: Record<string, string> = { review: 'Правка значения', batch: 'Правка нескольких значений', issue: 'Отметка замечания', reset: 'Сброс правок' }
+const hTime = (a: HAction) => Date.parse(a.at) || 0
+const hGroups = computed(() => {
+  const g: { label: string; items: HAction[] }[] = []
+  for (const a of srv.list) {
+    const label = dayLabel(hTime(a))
+    const last = g[g.length - 1]
+    if (last && last.label === label) last.items.push(a)
+    else g.push({ label, items: [a] })
+  }
+  return g
+})
+function hTarget(a: HAction) {
+  const c = Array.isArray(a.changes) ? a.changes[0] : a.changes
+  const o = (c && typeof c === 'object' ? c : {}) as { pid?: string; rid?: string; result_id?: string; domain?: 'solar' | 'rag' }
+  const rid = o.rid ?? o.result_id
+  if (!o.pid || !rid) return null
+  const l = resultLink(o.pid, rid, o.domain === 'rag' ? 'rag' : 'solar')
+  return { ...l, query: { ...l.query, run: a.run_id } }
+}
+const hLast = computed(() => srv.list.find((a) => !a.undone))
+async function undoAction(a: HAction) {
+  if (srv.busy) return
+  srv.busy = a.id
+  try {
+    await request(`/actions/${encodeURIComponent(a.id)}/undo`, { method: 'POST', silent: true })
+    ;(await import('../api/runs')).reloadRunPapers(a.run_id)
+    toast(`Отменено: ${a.label}`)
+    await loadHist()
+  } catch (e) { toast(errText(e, 'Не удалось отменить')) } finally { srv.busy = '' }
+}
+
 const last = computed(() => all.value[0])
 function undoLast() {
+  if (isApi) { if (hLast.value) void undoAction(hLast.value); return }
   const e = last.value
   if (!e) return
   const prev: Review = { ...reviewOf(e.pid, e.rid) }
   resetReview(e.pid, e.rid)
   toast(`Отменено: ${e.subject} (${e.pid})`, { label: 'Вернуть', run: () => setReview(e.pid, e.rid, prev) })
 }
-const sub = computed(() => `${dataRunTitle.value} · ${list.value.length} ${plural(list.value.length, ['правка', 'правки', 'правок'])}`)
+const count = computed(() => (isApi ? srv.list.length : list.value.length))
+const sub = computed(() => `${dataRunTitle.value} · ${count.value} ${plural(count.value, ['действие', 'действия', 'действий'])}`)
+const canUndo = computed(() => (isApi ? !!hLast.value && !srv.busy : !!last.value))
+const undoTip = computed(() => (isApi ? hLast.value?.label : last.value ? `${J_VERB[last.value.kind]}: ${last.value.subject}` : undefined))
 </script>
 
 <template>
-  <DataPage title="Журнал правок" :tabs="false" :sub="sub" back-to="/facts">
+  <DataPage title="Журнал правок" :loading="isApi ? !srv.loaded : !ready" :tabs="false" :sub="sub" back-to="/facts">
     <template #actions>
-      <button type="button" class="btn btn--soft btn--sm" :disabled="!last" :data-tip="last ? `${J_VERB[last.kind]}: ${last.subject}` : undefined" @click="undoLast">
+      <button type="button" class="btn btn--soft btn--sm" :disabled="!canUndo" :data-tip="undoTip" @click="undoLast">
         <Icon name="undo" :size="16" />{{ state.mobile ? 'Отменить' : 'Отменить последнее' }}
       </button>
     </template>
@@ -80,12 +129,39 @@ const sub = computed(() => `${dataRunTitle.value} · ${list.value.length} ${plur
         </div>
       </div>
     </template>
-    <template v-if="all.length" #toolbar>
+    <template v-if="!isApi && all.length" #toolbar>
       <UiSelect :model-value="kind" :options="kindOpts" label="Действие" variant="chip" size="sm" :class="{ 'filter-on': kind !== 'all' }" @update:model-value="(v) => (kind = v as typeof kind)" />
       <UiSelect :model-value="pidOn" :options="paperOpts" label="Статья" variant="chip" size="sm" :min-width="320" :class="{ 'filter-on': pidOn !== 'all' }" @update:model-value="(v) => (pid = v as string)" />
       <button v-if="dirty" type="button" class="chip" @click="reset">Сбросить<Icon name="x" :size="14" /></button>
     </template>
 
+    <template v-if="isApi">
+      <section v-for="g in hGroups" :key="g.label" class="day">
+        <h2>{{ g.label }}</h2>
+        <ul class="card">
+          <li v-for="a in g.items" :key="a.id" class="row" :class="{ 'is-undone': a.undone }">
+            <div class="row__main">
+              <p class="row__t">
+                <span class="st"><i class="dot" :class="a.action === 'reset' ? 'dot--warn' : a.action === 'issue' ? 'dot--blue' : 'dot--ok'" />{{ A_VERB[a.action] ?? 'Действие' }}</span>
+                <b>{{ a.label }}</b>
+              </p>
+              <p class="row__d">{{ a.undone ? 'Отменено · ' : '' }}<time v-if="hTime(a)" class="num" :datetime="a.at">{{ timeLabel(hTime(a)) }}</time></p>
+            </div>
+            <div class="acts">
+              <button v-if="!a.undone" type="button" class="link" :disabled="!!srv.busy" @click="undoAction(a)"><Icon name="undo" :size="15" />Отменить</button>
+              <button v-if="hTarget(a)" type="button" class="link" @click="openDeep(router, hTarget(a)!)">К значению<Icon name="arrow-right" :size="16" /></button>
+            </div>
+          </li>
+        </ul>
+      </section>
+      <UiEmpty
+        v-if="!srv.list.length" icon="history" title="Правок пока нет"
+        text="Принимайте, исправляйте и отклоняйте значения в таблице или в статье — каждое действие появится здесь."
+      >
+        <template #action><RouterLink class="btn btn--soft btn--sm" :to="{ path: '/facts', query: runQ ? { run: runQ } : {} }">Открыть таблицу</RouterLink></template>
+      </UiEmpty>
+    </template>
+    <template v-else>
     <section v-for="g in groups" :key="g.label" class="day">
       <h2>{{ g.label }}</h2>
       <ul class="card">
@@ -116,6 +192,7 @@ const sub = computed(() => `${dataRunTitle.value} · ${list.value.length} ${plur
     >
       <template #action><RouterLink class="btn btn--soft btn--sm" :to="{ path: '/facts', query: runQ ? { run: runQ } : {} }">Открыть таблицу</RouterLink></template>
     </UiEmpty>
+    </template>
   </DataPage>
 </template>
 
@@ -136,6 +213,9 @@ const sub = computed(() => `${dataRunTitle.value} · ${list.value.length} ${plur
 .from { text-decoration: line-through; text-decoration-color: var(--faint); }
 .to { color: var(--ink); font-weight: 500; }
 .link { min-height: 32px; font-size: var(--fs-sm); }
+.acts { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); justify-content: flex-end; }
+.is-undone .row__t b { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
+@media (max-width: 768px) { .acts { justify-content: flex-start; } }
 
 @media (max-width: 768px) {
   .row { grid-template-columns: minmax(0, 1fr); padding: var(--s4); }

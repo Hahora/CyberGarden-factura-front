@@ -251,18 +251,15 @@ function say(what: string, r: ResultRow, prev: Review) {
   toast(`${what}: ${resultName(r)}`, { label: 'Вернуть', run: () => restore(r, prev) })
 }
 function accept(r: ResultRow, next = false) {
-  if (isApi) return
   const prev = setReview(r.publication_id, r.result_id, { status: 'accepted' })
   say('Принято', r, prev)
   if (next) move(1)
 }
 function reject(r: ResultRow) {
-  if (isApi) return
   const prev = setReview(r.publication_id, r.result_id, { status: 'rejected' })
   say('Отклонено', r, prev)
 }
 async function startEdit(r: ResultRow) {
-  if (isApi) return
   editing.value = r.result_id
   editVal.value = correctedText(r)
   await nextTick()
@@ -285,12 +282,10 @@ function saveEdit(r: ResultRow) {
 }
 
 function resolve(i: IssueRow, how: 'fixed' | 'ok') {
-  if (isApi) return
   resolveIssue(pid.value, i.issue_id, how)
   toast(`${ISSUE_STATE_RU[how]}: ${checkLabel(i.check_name)}`, { label: 'Вернуть', run: () => reopenIssue(pid.value, i.issue_id) })
 }
 function reopen(i: IssueRow) {
-  if (isApi) return
   reopenIssue(pid.value, i.issue_id)
   if (stOf(i) !== 'open') toast('Замечание закрыто само: все его значения исправлены или отклонены')
 }
@@ -523,11 +518,11 @@ const tone = (f: string) => (f === 'absorber' ? 'abs' : f.includes('contact') ? 
                             <button v-if="mobile && (r.source_page || r.source_fragment)" type="button" class="btn btn--soft btn--sm rr__pdf" @click="view = 'pdf'">
                               <Icon name="eye" :size="16" />Показать в PDF
                             </button>
-                            <button type="button" class="btn btn--sm" :class="reviewed(r).status === 'accepted' && reviewed(r).corrected == null ? 'btn--dark' : 'btn--soft'" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="accept(r)">
+                            <button type="button" class="btn btn--sm" :class="reviewed(r).status === 'accepted' && reviewed(r).corrected == null ? 'btn--dark' : 'btn--soft'" @click="accept(r)">
                               <Icon name="check" :size="16" />Принять<kbd v-if="!mobile">Enter</kbd>
                             </button>
-                            <button type="button" class="btn btn--soft btn--sm" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="startEdit(r)"><Icon name="edit" :size="16" />Исправить</button>
-                            <button type="button" class="btn btn--sm" :class="reviewed(r).status === 'rejected' ? 'btn--dark' : 'btn--ghost'" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="reject(r)"><Icon name="x" :size="16" />Отклонить</button>
+                            <button type="button" class="btn btn--soft btn--sm" @click="startEdit(r)"><Icon name="edit" :size="16" />Исправить</button>
+                            <button type="button" class="btn btn--sm" :class="reviewed(r).status === 'rejected' ? 'btn--dark' : 'btn--ghost'" @click="reject(r)"><Icon name="x" :size="16" />Отклонить</button>
                             <p v-if="reviewed(r).status === 'rejected'" class="csvnote">{{ REJECT_CSV_NOTE }}</p>
                             <p v-if="r.duplicate_of" class="rr__note">Правка меняет основное значение и все его повторы</p>
                           </template>
@@ -634,12 +629,12 @@ const tone = (f: string) => (f === 'absorber' ? 'abs' : f.includes('contact') ? 
                           <Icon name="eye" :size="16" />Показать в PDF
                         </button>
                         <template v-if="stOf(i) === 'open'">
-                          <button type="button" class="btn btn--ghost btn--sm" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : 'Вы поправили число в статье или в данных — пометить замечание исправленным'" @click="resolve(i, 'fixed')">
+                          <button type="button" class="btn btn--ghost btn--sm" :data-tip="'Вы поправили число в статье или в данных — пометить замечание исправленным'" @click="resolve(i, 'fixed')">
                             <Icon name="check" :size="16" />Отметить исправленным
                           </button>
-                          <button type="button" class="btn btn--ghost btn--sm" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : 'Проверили: в статье всё верно, программа ошиблась — закрыть замечание'" @click="resolve(i, 'ok')">Это не ошибка</button>
+                          <button type="button" class="btn btn--ghost btn--sm" :data-tip="'Проверили: в статье всё верно, программа ошиблась — закрыть замечание'" @click="resolve(i, 'ok')">Это не ошибка</button>
                         </template>
-                        <button v-else type="button" class="btn btn--ghost btn--sm" :disabled="isApi" :data-tip="isApi ? DEV_TEXT : undefined" @click="reopen(i)"><Icon name="undo" :size="16" />Открыть снова</button>
+                        <button v-else type="button" class="btn btn--ghost btn--sm" @click="reopen(i)"><Icon name="undo" :size="16" />Открыть снова</button>
                       </div>
                     </li>
                   </ul>

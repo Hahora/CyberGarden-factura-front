@@ -64,7 +64,12 @@ function reset() {
 }
 
 const allPids = computed(() => [...new Set(runs.flatMap((r) => runPapers(r.id)))])
-function exportAll() {
+async function exportAll() {
+  if (isApi) {
+    const m = await import('../api/runs')
+    for (const d of new Set(runs.map((r) => r.domain))) await m.downloadAllRunsSet(d)
+    return
+  }
   toast(submissionToast(downloadSubmission(allPids.value, 'Набор для сдачи — все разборы.zip')))
 }
 const sure = ref(false)
@@ -178,8 +183,8 @@ const ping = () => void pingRun(async () => { await checkHealth() })
           <SetGroup v-else-if="section === 'export'">
             <SetRow title="Источник данных" :hint="isApi ? `Сервер (${API_URL})` : 'Локальные данные'" />
             <SetRow v-if="isApi" action icon="check" :title="pingBusy ? 'Проверяем…' : 'Проверить соединение'" :hint="server.state === 'up' ? 'Сервер отвечает' : server.state === 'down' ? 'Сервер недоступен' : 'Ещё не проверялось'" :busy="pingBusy" @click="ping" />
-            <SetRow v-if="!isApi" to="/export" title="Открыть экспорт" hint="Набор для сдачи (7 таблиц), JSON и Excel" />
-            <SetRow v-if="!isApi" action title="Скачать набор по всем разборам" :hint="`ZIP: 7 таблиц и паспорт · статей: ${allPids.length}`" @click="exportAll" />
+            <SetRow to="/export" title="Открыть экспорт" hint="Набор для сдачи (7 таблиц), JSON и Excel" />
+            <SetRow action title="Скачать набор по всем разборам" :hint="isApi ? 'ZIP: 7 таблиц и паспорт, по каждой области отдельно' : `ZIP: 7 таблиц и паспорт · статей: ${allPids.length}`" @click="exportAll" />
             <SetRow v-if="!isApi" action tone="danger" :title="sure ? 'Нажмите ещё раз, чтобы сбросить' : 'Сбросить локальные данные'" :hint="sure ? 'Настройки, профиль и ваши правки будут удалены' : 'Убрать разборы, ваши правки и профиль из этого браузера'" @click="resetLocal" />
           </SetGroup>
         </div>

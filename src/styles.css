@@ -209,6 +209,8 @@ input:focus-visible, textarea:focus-visible { outline-offset: 0; }
 .btn:disabled { opacity: 0.45; cursor: default; transform: none; }
 .btn--dark { background: var(--solid); color: var(--on-solid); }
 .btn--dark:hover:not(:disabled) { background: var(--solid-hover); }
+.btn--danger { background: var(--red); color: #fff; }
+.btn--danger:hover:not(:disabled) { filter: brightness(0.92); }
 .btn--soft { background: var(--bg-2); }
 .btn--soft:hover:not(:disabled) { background: var(--bg-3); }
 .btn--ghost:hover:not(:disabled) { background: var(--bg-2); }

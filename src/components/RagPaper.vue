@@ -196,6 +196,7 @@ function revealDet() {
   if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = Math.max(0, Math.min(rowTop - 8, bottom - el.clientHeight + 4))
   scrollTop.value = el.scrollTop
 }
+const editing = ref(false)
 const closeSel = () => { sel.value = null; editing.value = false; setQuery({ r: undefined }) }
 const sel = ref<string | null>(null)
 const selRow = computed(() => (sel.value ? ragResult(pid.value, sel.value) : undefined))
@@ -270,7 +271,6 @@ watch(
   { immediate: true },
 )
 
-const editing = ref(false)
 const editVal = ref('')
 let editInput: HTMLInputElement | null = null
 const setEditInput = (el: unknown) => (editInput = el instanceof HTMLInputElement ? el : null)

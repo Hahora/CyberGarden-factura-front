@@ -6,7 +6,7 @@ import type { TextLayer } from 'pdfjs-dist'
 import Icon from './Icon.vue'
 import UiSkeleton from './UiSkeleton.vue'
 import UiEmpty from './UiEmpty.vue'
-import { openPdf, pdfjs } from '../pdf/pdfjs'
+import { openPdf, pdfError, pdfjs } from '../pdf/pdfjs'
 import { findFragment, type Piece } from '../pdf/find'
 import { toast } from '../store'
 
@@ -88,10 +88,16 @@ async function load(src: string) {
     measure()
     if (pending) void runFocus()
     else pump()
-  } catch {
-    if (seq === loadSeq) status.value = 'error'
+  } catch (e) {
+    if (seq !== loadSeq) return
+    status.value = 'error'
+    errWhy.value = ''
+    console.warn('PDF', src, e)
+    const why = await pdfError(src, e)
+    if (seq === loadSeq) errWhy.value = why
   }
 }
+const errWhy = ref('')
 
 function reset() {
   for (const s of pstate.values()) {
@@ -594,7 +600,7 @@ const fallbackPages = computed(() => (width.value && width.value < 560 ? 1 : 2))
       </div>
 
       <div v-else-if="status === 'error'" class="pv__err">
-        <UiEmpty icon="doc" title="PDF не открылся" text="Файл статьи не загрузился. Попробуйте ещё раз." action="Повторить" action-icon="undo" plain @action="load(src)" />
+        <UiEmpty icon="doc" title="PDF не открылся" :text="errWhy ? `Файл статьи не загрузился: ${errWhy}` : 'Файл статьи не загрузился. Попробуйте ещё раз.'" action="Повторить" action-icon="undo" plain @action="load(src)" />
       </div>
 
       <div v-else class="pv__pages">

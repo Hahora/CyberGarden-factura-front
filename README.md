@@ -1,9 +1,41 @@
-# Фактура AI — фронтенд
+<p align="center">
+  <img src=".github/screenshots/landing.png" alt="Фактура AI — каждое число с доказательством" width="100%">
+</p>
 
-Веб-интерфейс сервиса, который извлекает данные из научных статей. Загружаете PDF и получаете таблицы набора данных в формате сдачи кейса. У каждого числа есть страница статьи и дословная цитата, а противоречия в статье отмечены как замечания.
+<h1 align="center">Фактура AI</h1>
 
-- **Сайт:** <https://factura.t1nnld.com>
-- **Бэкенд:** <https://github.com/Nomadd-yas/faktura-ai>
+<p align="center">
+  <b>Каждое число — с доказательством.</b><br>
+  Загружаете научные PDF и получаете таблицы набора данных в формате сдачи кейса.<br>
+  У каждого значения есть страница статьи и дословная цитата, противоречия отмечены как замечания.
+</p>
+
+<p align="center">
+  <a href="https://factura.t1nnld.com"><b>Открыть сайт</b></a> ·
+  <a href="https://github.com/Nomadd-yas/faktura-ai">Бэкенд</a> ·
+  <a href="#скриншоты">Скриншоты</a> ·
+  <a href="#быстрый-старт">Быстрый старт</a>
+</p>
+
+<p align="center">
+  <img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-42b883?logo=vuedotjs&logoColor=white">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white">
+  <img alt="Vite" src="https://img.shields.io/badge/Vite-7-646cff?logo=vite&logoColor=white">
+  <img alt="pdf.js" src="https://img.shields.io/badge/pdf.js-PDF%20viewer-e34f26">
+</p>
+
+<table>
+  <tr>
+    <td width="33%" align="center"><b>1. Загрузите PDF</b><br><sub>Папка, ZIP или файлы, область выбирается сразу</sub></td>
+    <td width="33%" align="center"><b>2. Получите таблицы</b><br><sub>7 таблиц шаблона, сводка и замечания</sub></td>
+    <td width="33%" align="center"><b>3. Проверьте по статье</b><br><sub>Клик по числу — цитата подсвечена в PDF</sub></td>
+  </tr>
+  <tr>
+    <td><img src=".github/screenshots/home.png" alt="Новый разбор"></td>
+    <td><img src=".github/screenshots/run.png" alt="Разбор"></td>
+    <td><img src=".github/screenshots/paper.png" alt="Статья с подсвеченной цитатой"></td>
+  </tr>
+</table>
 
 Проект сделан для кейса 5 хакатона ВИНИТИ «Извлечение фактов из научных статей». В нём две предметные области:
 
@@ -23,6 +55,8 @@
   - «Паспорт»: поля, типы, единицы, правила и критерии.
   - «Экспорт».
 - **Набор для сдачи.** ZIP с 7 CSV и паспортом. С бэком сервер прогоняет официальный `check_submission.py`, и итог проверки показывается после скачивания.
+- **Правки и журнал.** Значение можно принять, исправить или отклонить, замечание — закрыть. Все действия видны в журнале и отменяются.
+- **Вопросы по разбору.** Спросите обычными словами («лучший КПД перовскитов со слоем SnO2») — ответ со ссылками на строки и страницы. Есть голосовой ввод.
 - **Удобство.** Поиск по статьям и значениям (Ctrl+K), горячие клавиши, светлая и тёмная тема, адаптивная вёрстка, единые скелетоны загрузки.
 
 ## Стек
@@ -66,7 +100,7 @@ npm run corpus -- Кейс5_область1_участникам.zip   # PDF п�
 
 Дев-сервер проксирует `/api`, поэтому для браузера это один домен: CORS не нужен, refresh-cookie работает. На Windows для прокси лучше указывать `127.0.0.1`, а не `localhost`.
 
-В режиме `api` всё, чего в API ещё нет (правки значений, журнал, чат, управление разбором), показано как «В разработке». Данные на моках в этом режиме не подставляются.
+В режиме `api` всё работает через сервер: разборы, правки значений и отметки замечаний, журнал с отменой, вопросы по разбору, словарь нормализации, экспорт. Ход разбора приходит потоком событий (SSE). Данные на моках в этом режиме не подставляются.
 
 Для проверки режима `api` без настоящего бэкенда есть маленький сервер на эталоне dev:
 
@@ -121,3 +155,29 @@ data/
 - пустая ячейка значит «в статье этого нет».
 
 Вместе с таблицами в архив кладётся паспорт набора: `PASSPORT.md` и `passport.json`.
+
+## Скриншоты
+
+<table>
+  <tr>
+    <td width="50%"><img src=".github/screenshots/paper.png" alt="Статья"><p align="center"><sub><b>Статья.</b> PDF с подсветкой цитаты, рядом значения: принять, исправить, отклонить</sub></p></td>
+    <td width="50%"><img src=".github/screenshots/facts.png" alt="Таблица набора"><p align="center"><sub><b>Таблица набора.</b> Те же 7 таблиц, что уходят на сдачу</sub></p></td>
+  </tr>
+  <tr>
+    <td><img src=".github/screenshots/checks.png" alt="Проверки"><p align="center"><sub><b>Проверки.</b> Замечания по правилам: числа не сходятся, противоречия, единицы</sub></p></td>
+    <td><img src=".github/screenshots/export.png" alt="Экспорт"><p align="center"><sub><b>Экспорт.</b> ZIP для сдачи, JSON, Excel и паспорт набора</sub></p></td>
+  </tr>
+  <tr>
+    <td><img src=".github/screenshots/run-dark.png" alt="Разбор в тёмной теме"><p align="center"><sub><b>Тёмная тема.</b> Переключается автоматически по системе</sub></p></td>
+    <td><img src=".github/screenshots/passport.png" alt="Паспорт набора"><p align="center"><sub><b>Паспорт набора.</b> Поля, единицы, правила проверок и критерии отбора</sub></p></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src=".github/screenshots/mobile-home.png" alt="Телефон: новый разбор" width="24%">
+  &nbsp;
+  <img src=".github/screenshots/mobile-run.png" alt="Телефон: разбор" width="24%">
+  &nbsp;
+  <img src=".github/screenshots/mobile-run-light.png" alt="Телефон: светлая тема" width="24%">
+  <br><sub><b>На телефоне.</b> Та же работа с разборами, адаптивная вёрстка</sub>
+</p>

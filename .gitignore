@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.local
+
+public/corpus/
+public/case/
+
+.playwright-cli/
+.playwright-mcp/

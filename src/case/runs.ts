@@ -30,7 +30,7 @@ export type Msg =
   | { id: string; role: 'user'; kind: 'files'; at: number; fileIds: string[] }
   | { id: string; role: 'system'; kind: 'run'; at: number; fileIds: string[] }
   | { id: string; role: 'user'; kind: 'question'; at: number; text: string }
-  | { id: string; role: 'system'; kind: 'answer'; at: number; q: string; answer?: unknown; pending?: boolean; error?: string; doneAt?: number }
+  | { id: string; role: 'system'; kind: 'answer'; at: number; q: string; answer?: unknown; pending?: boolean; error?: string; doneAt?: number; sid?: string; steps?: string[]; live?: string; stopped?: boolean; rating?: 'up' | 'down' | null }
 export type RunEx = Run & { detail?: boolean; messages?: Msg[]; batches?: { id: string; at: number; fileIds: string[] }[] }
 let mseq = 0
 const mid = () => 'm' + Date.now().toString(36) + (mseq++).toString(36)
@@ -544,6 +544,7 @@ async function respond(runId: string, msgId: string) {
   m.pending = true
   m.error = undefined
   const started = Date.now()
+  if (isApi && (await agentRespond(runId, msgId))) return
   try {
     let ans: unknown
     if (isApi) {
@@ -573,4 +574,121 @@ export function askRun(id: string, text: string) {
   void respond(id, a.id)
 }
 export const retryAnswer = (runId: string, msgId: string) => void respond(runId, msgId)
+
+const answerMsg = (runId: string, msgId: string) => {
+  const m = messagesOf(runId).find((x) => x.id === msgId)
+  return m && m.kind === 'answer' ? m : undefined
+}
+async function agentRespond(runId: string, msgId: string): Promise<boolean> {
+  const m = answerMsg(runId, msgId)
+  if (!m) return true
+  const c = await import('../api/chat')
+  const { ApiError } = await import('../api/client')
+  Object.assign(m, { pending: true, error: undefined, steps: [], live: '', stopped: false, answer: undefined })
+  let posted: Awaited<ReturnType<typeof c.postQuestion>>
+  try {
+    posted = await c.postQuestion(runId, m.q, { thread: c.currentThread[runId] })
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 405) && e.code !== 'not_found') return false
+    const cur = answerMsg(runId, msgId)
+    if (cur) Object.assign(cur, { pending: false, error: e instanceof ApiError && e.code !== 'network' ? e.message : 'Не удалось отправить вопрос' })
+    return true
+  }
+  if (posted.thread_id) c.currentThread[runId] = posted.thread_id
+  const cur = answerMsg(runId, msgId)
+  if (cur) cur.sid = posted.message_id
+  await streamAnswer(runId, msgId, posted.stream_url)
+  void c.loadThreads(runId).catch(() => {})
+  return true
+}
+async function streamAnswer(runId: string, msgId: string, url: string) {
+  const c = await import('../api/chat')
+  try {
+    await c.readStream(url, (e) => {
+      const m = answerMsg(runId, msgId)
+      if (!m) return
+      if (e.event === 'step') m.steps = [...(m.steps ?? []), e.data.text]
+      else if (e.event === 'text') m.live = (m.live ?? '') + e.data.text
+      else if (e.event === 'done') Object.assign(m, { pending: false, answer: c.normalizeAnswer(e.data.answer), doneAt: Date.now(), stopped: e.data.status === 'stopped', sid: e.data.message_id || m.sid })
+      else if (e.event === 'error') Object.assign(m, { pending: false, error: e.data.message || 'Не удалось ответить на вопрос' })
+    })
+  } catch (e) {
+    const m = answerMsg(runId, msgId)
+    if (m) Object.assign(m, { pending: false, error: e instanceof Error && e.message ? e.message : 'Связь с сервером прервалась' })
+    return
+  }
+  const m = answerMsg(runId, msgId)
+  if (m?.pending) Object.assign(m, { pending: false, error: 'Ответ не дошёл до конца — повторите вопрос' })
+}
+export async function stopAnswer(runId: string, msgId: string) {
+  const m = answerMsg(runId, msgId)
+  if (!m?.sid) return
+  try { await (await import('../api/chat')).stopMessage(runId, m.sid) } catch { toast('Не удалось остановить ответ') }
+}
+export async function rateAnswer(runId: string, msgId: string, rating: 'up' | 'down' | null, reason?: string) {
+  const m = answerMsg(runId, msgId)
+  if (!m?.sid) return
+  const old = m.rating ?? null
+  m.rating = rating
+  try {
+    await (await import('../api/chat')).rateMessage(runId, m.sid, rating, reason)
+    if (rating) toast(rating === 'up' ? 'Спасибо за оценку' : 'Спасибо — учтём, что ответ не подошёл')
+  } catch { m.rating = old; toast('Не удалось сохранить оценку') }
+}
+
+export const chatLoading = reactive<Record<string, boolean>>({})
+function setChat(runId: string, list: import('../api/chat').ServerMsg[], norm: typeof import('../api/chat').normalizeAnswer) {
+  const r = runOf(runId) as RunEx | undefined
+  if (!r) return
+  const base = (r.messages ?? []).filter((x) => x.kind === 'files' || x.kind === 'run')
+  const out: Msg[] = []
+  let q = ''
+  for (const s of list) {
+    const at = Date.parse(s.at) || Date.now()
+    if (s.kind === 'text' && s.role === 'user') {
+      q = s.text ?? ''
+      out.push({ id: 'q_' + s.id, role: 'user', kind: 'question', at, text: q })
+    } else if (s.kind === 'answer') {
+      out.push({
+        id: 'a_' + s.id, role: 'system', kind: 'answer', at, q, sid: s.id, answer: norm(s.answer), doneAt: at,
+        pending: s.status === 'running', stopped: s.status === 'stopped', rating: s.rating ?? null,
+        ...(s.status === 'error' ? { error: 'Не удалось ответить на вопрос' } : {}),
+        ...(s.status === 'running' ? { steps: [], live: '' } : {}),
+      })
+    }
+  }
+  r.messages = [...base, ...out]
+}
+export async function loadRunChat(runId: string, tid?: string) {
+  if (!isApi || !runOf(runId)) return
+  const c = await import('../api/chat')
+  chatLoading[runId] = true
+  try {
+    const list = await c.loadThreads(runId)
+    const id = tid ?? (list.some((t) => t.id === c.currentThread[runId]) ? c.currentThread[runId] : list[0]?.id)
+    if (!id) { setChat(runId, [], c.normalizeAnswer); return }
+    const t = await c.openThread(runId, id)
+    setChat(runId, t.messages ?? [], c.normalizeAnswer)
+    if (t.running_message_id && t.stream_url) void streamAnswer(runId, 'a_' + t.running_message_id, t.stream_url)
+  } catch { } finally { chatLoading[runId] = false }
+}
+export async function newChat(runId: string) {
+  const c = await import('../api/chat')
+  try {
+    await c.createThread(runId)
+    setChat(runId, [], c.normalizeAnswer)
+  } catch (e) { toast(e instanceof Error && e.message ? e.message : 'Не удалось создать чат') }
+}
+export async function renameChat(runId: string, tid: string, title: string) {
+  const c = await import('../api/chat')
+  try { await c.renameThread(runId, tid, title) } catch (e) { toast(e instanceof Error && e.message ? e.message : 'Не удалось переименовать чат') }
+}
+export async function deleteChat(runId: string, tid: string) {
+  const c = await import('../api/chat')
+  try {
+    await c.deleteThread(runId, tid)
+    toast('Чат удалён')
+    await loadRunChat(runId)
+  } catch (e) { toast(e instanceof Error && e.message ? e.message : 'Не удалось удалить чат') }
+}
 for (const r of runs) for (const m of (r as RunEx).messages ?? []) if (m.kind === 'answer' && m.pending) void respond(r.id, m.id)

@@ -67,7 +67,7 @@ async function loadHist() {
   } catch (e) { toast(errText(e, 'Не удалось загрузить журнал')) } finally { srv.loaded = true }
 }
 if (isApi) watch(dataRun, () => void loadHist(), { immediate: true })
-const A_VERB: Record<string, string> = { review: 'Правка значения', batch: 'Правка нескольких значений', issue: 'Отметка замечания', reset: 'Сброс правок' }
+const A_VERB: Record<string, string> = { review: 'Правка значения', batch: 'Правка нескольких значений', issue: 'Отметка замечания', fix: 'Исправление замечания', reset: 'Сброс правок' }
 const hTime = (a: HAction) => Date.parse(a.at) || 0
 const hGroups = computed(() => {
   const g: { label: string; items: HAction[] }[] = []

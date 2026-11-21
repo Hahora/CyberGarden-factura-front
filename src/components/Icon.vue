@@ -17,6 +17,8 @@ const ICONS: Record<string, string> = {
   'folder-open': `<path d="M3.5 8V6.5a2 2 0 0 1 2-2h3.8l2 2h6.7a2 2 0 0 1 2 2V8"/><path class="a-front" d="M3 19.5l2.2-7.4A2 2 0 0 1 7.1 10.6h13.3a1 1 0 0 1 .95 1.3l-2.1 6.9a2 2 0 0 1-1.9 1.4H4.5A1.5 1.5 0 0 1 3 18.7z"/>`,
   dots: `<circle class="a-d" style="animation-delay:0ms" cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle class="a-d" style="animation-delay:100ms" cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle class="a-d" style="animation-delay:200ms" cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/>`,
   edit: `<path d="M4 20.5h5"/><g class="a-scrib"><path d="M14.5 5.5l4 4-8.5 8.5-4.5 1 1-4.5z"/></g>`,
+  'thumb-up': `<path d="M7.5 10.5v9h-3a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z"/><path d="M7.5 10.5l3.6-6.3a1.6 1.6 0 0 1 2.9 1.2l-.8 3.6h5.2a2 2 0 0 1 2 2.4l-1.2 6a2 2 0 0 1-2 1.6H7.5"/>`,
+  'thumb-down': `<path d="M7.5 13.5v-9h-3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1z"/><path d="M7.5 13.5l3.6 6.3a1.6 1.6 0 0 0 2.9-1.2l-.8-3.6h5.2a2 2 0 0 0 2-2.4l-1.2-6a2 2 0 0 0-2-1.6H7.5"/>`,
   trash: `<g class="a-lid"><path d="M4 7h16"/><path d="M9.5 7V5a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 14.5 5v2"/></g><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M10 11v6M14 11v6"/>`,
   pin: `<g class="a-tilt"><path d="M8.5 4.5h7l-1 5 2.5 3v1.5h-10V12.5l2.5-3z"/><path d="M12 14v6.5"/></g>`,
   gear: `<g class="a-spin"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.8"/><path d="M12 5.2V2.4M16.81 7.19l1.98-1.98M18.8 12h2.8M16.81 16.81l1.98 1.98M12 18.8v2.8M7.19 16.81l-1.98 1.98M5.2 12H2.4M7.19 7.19 5.21 5.21"/></g>`,

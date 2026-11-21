@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type Component } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import FileComposer from '../components/FileComposer.vue'
 import Icon from '../components/Icon.vue'
@@ -11,6 +11,8 @@ import UiSkeleton from '../components/UiSkeleton.vue'
 import RunFeedSkeleton from '../components/RunFeedSkeleton.vue'
 import SubmissionView from '../components/SubmissionView.vue'
 import IssuesList from '../components/IssuesList.vue'
+import SourceList from '../components/SourceList.vue'
+import type { Source } from '../api/chat'
 import { useScrollMemory } from '../viewState'
 import { plural } from '../search'
 import { fmtInt } from '../fmt'
@@ -18,13 +20,13 @@ import { dataLink } from '../dataTabs'
 import { DOMAIN_RU, NODATA_TEXT, checkLabel, metricLabel, paperPath, publication, resultLink, resultsOf, reviewInherited, reviewOf, reviewScope, setReviewScope, unitRu, type RunFile } from '../case'
 import { ragMetricCase, ragLoad, ragPublication, ragResultsOf, ragSummaryOf } from '../case/rag'
 import {
-  rerunAs, addToRun, askRun, deleteRun, isRunning, messagesOf, renameRun, rerun, retryAnswer, runOf, runPapers, runPapersInScope, runSummary, stopRun,
+  rerunAs, addToRun, askRun, deleteRun, loadRunChat, newChat, renameChat, deleteChat, stopAnswer, rateAnswer, chatLoading, isRunning, messagesOf, renameRun, rerun, retryAnswer, runOf, runPapers, runPapersInScope, runSummary, stopRun,
   setRunDomain, togglePinRun,
 } from '../case/runs'
 import { downloadRunData, downloadRunPassport, downloadRunSet } from '../case/runSet'
 import { isApi } from '../config'
 import { toast } from '../store'
-import { askConfirm } from '../prompt'
+import { askConfirm, askText } from '../prompt'
 import { runsLoad } from '../api/state'
 import { useBusy } from '../useBusy'
 import { loadRun, summaryFailed, summaryLoading, retrySummary } from '../api/runs'
@@ -66,6 +68,45 @@ async function loadRag() {
   try { await Promise.all(list.map(ragLoad)) } finally { ragBusy.value = false }
 }
 watch(() => [!!run.value, props.id] as const, ([ok, id]) => { if (ok && reviewScope.value !== id) setReviewScope(id) }, { immediate: true })
+const chatApi = shallowRef<typeof import('../api/chat') | null>(null)
+if (isApi) void import('../api/chat').then((m) => { chatApi.value = m })
+watch(() => [!!run.value, props.id] as const, ([ok, id]) => { if (ok && isApi) void loadRunChat(id) }, { immediate: true })
+const chatList = computed(() => chatApi.value?.threads[props.id] ?? [])
+const chatCur = computed(() => chatApi.value?.currentThread[props.id] ?? '')
+const chatTitle = computed(() => chatList.value.find((t) => t.id === chatCur.value)?.title ?? 'Новый чат')
+const chats = ref(false)
+const chatsWrap = ref<HTMLElement>()
+const onDocChats = (e: MouseEvent) => { if (chats.value && !chatsWrap.value?.contains(e.target as Node)) chats.value = false }
+onMounted(() => document.addEventListener('click', onDocChats))
+onBeforeUnmount(() => document.removeEventListener('click', onDocChats))
+function pickChat(tid: string) {
+  chats.value = false
+  if (tid !== chatCur.value) void loadRunChat(props.id, tid)
+}
+function startChat() {
+  chats.value = false
+  void newChat(props.id)
+}
+async function renameChatAsk(tid: string, title: string) {
+  chats.value = false
+  const t = await askText({ title: 'Название чата', value: title, ok: 'Сохранить', label: 'Название' })
+  if (t && t.trim() && t.trim() !== title) void renameChat(props.id, tid, t.trim())
+}
+async function deleteChatAsk(tid: string, title: string) {
+  chats.value = false
+  if (await askConfirm('Удалить чат?', `«${title}» и все ответы в нём будут удалены.`)) void deleteChat(props.id, tid)
+}
+const rateOpen = ref('')
+const REASONS = ['Неверная цифра', 'Не тот источник', 'Неполный ответ']
+function rate(id: string, v: 'up' | 'down', cur?: 'up' | 'down' | null) {
+  if (cur === v) { rateOpen.value = ''; void rateAnswer(props.id, id, null); return }
+  if (v === 'up') { rateOpen.value = ''; void rateAnswer(props.id, id, 'up'); return }
+  rateOpen.value = rateOpen.value === id ? '' : id
+}
+function rateDown(id: string, reason: string) {
+  rateOpen.value = ''
+  void rateAnswer(props.id, id, 'down', reason)
+}
 watch(() => [props.id, pids.value.join(','), reviewScope.value], () => void loadRag(), { immediate: true })
 
 const filesOf = (ids: string[]) => {
@@ -275,11 +316,19 @@ async function ask(text: string) {
 const ASK = import.meta.glob<{ suggestionsFor?: (pids: string[], domain?: 'solar' | 'rag') => string[] }>('../case/ask.ts', { eager: true })
 const askMod = Object.values(ASK)[0]
 const serverSugg = ref<string[]>([])
-watch(() => [props.id, running.value] as const, ([id, busy]) => {
+async function loadSugg(id: string, thread: string) {
+  let l: string[] = []
+  try { l = await (await import('../api/chat')).chatSuggestions(id, thread || undefined) } catch {
+    try { l = await (await import('../api/extra')).askSuggestionsApi(id) } catch { l = [] }
+  }
+  if (props.id === id && chatCur.value === thread) serverSugg.value = Array.isArray(l) ? l.slice(0, 4) : []
+}
+watch(() => [props.id, running.value, chatCur.value, askedList.value.length] as const, ([id, busy, thread]) => {
   if (!isApi || busy) return
-  void import('../api/extra').then((m) => m.askSuggestionsApi(id)).then((l) => { if (props.id === id) serverSugg.value = Array.isArray(l) ? l.slice(0, 4) : [] }).catch(() => { serverSugg.value = [] })
+  void loadSugg(id, thread)
 }, { immediate: true })
-const suggestions = computed(() => (isApi ? serverSugg.value : pids.value.length ? (askMod?.suggestionsFor?.(pids.value, run.value?.domain ?? 'solar') ?? []).slice(0, 4) : []))
+const suggestions = computed(() => (isApi ? serverSugg.value.filter((q) => !askedList.value.includes(q)) : pids.value.length ? (askMod?.suggestionsFor?.(pids.value, run.value?.domain ?? 'solar') ?? []).slice(0, 4) : []))
+const sourcesOf = (a: unknown): Source[] => (a && typeof a === 'object' && Array.isArray((a as { sources?: unknown }).sources) ? (a as { sources: Source[] }).sources : [])
 const timeOf = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 const copied = ref('')
 async function copyAnswer(id: string, a: unknown) {
@@ -546,7 +595,15 @@ const answerText = (a: unknown) => {
           <div v-else-if="m.kind === 'answer'" class="ans" :style="tail?.id === m.id ? { minHeight: tail.min + 'px' } : undefined">
             <span class="ans__av" aria-hidden="true"><Icon name="logo" :size="18" /></span>
             <div class="ans__body">
-              <UiLoad :loading="!!m.pending">
+              <div v-if="m.pending && (m.steps?.length || m.live)" class="live" aria-live="polite">
+                <ol v-if="m.steps?.length" class="live__steps" role="list">
+                  <li v-for="(s, i) in m.steps" :key="i" :class="{ 'is-cur': i === m.steps.length - 1 && !m.live }">
+                    <UiSpinner v-if="i === m.steps.length - 1 && !m.live" :size="12" tone="current" /><Icon v-else name="check" :size="13" />{{ s }}
+                  </li>
+                </ol>
+                <p v-if="m.live" class="live__text">{{ m.live }}<span class="live__caret" aria-hidden="true" /></p>
+              </div>
+              <UiLoad v-else :loading="!!m.pending">
                 <template #skeleton><UiSkeleton :lines="3" /></template>
                 <div v-if="m.error" class="ans__err">
                   <p>{{ m.error }}</p>
@@ -554,13 +611,34 @@ const answerText = (a: unknown) => {
                 </div>
                 <component :is="CaseAnswer" v-else-if="CaseAnswer" :answer="m.answer" :asked="askedList" @ask="ask" />
                 <p v-else class="ans__p">{{ answerText(m.answer) }}</p>
+                <section v-if="!m.error && sourcesOf(m.answer).length" class="srcb" aria-label="Работы из OpenAlex">
+                  <p class="srcb__h">Работы из OpenAlex <span>не входят в данные разбора</span></p>
+                  <SourceList :sources="sourcesOf(m.answer)" />
+                  <RouterLink v-if="m.sid" :to="{ path: '/run/' + encodeURIComponent(run.id) + '/sources', query: { m: m.sid } }" class="link srcb__all">
+                    Источники{{ sourcesOf(m.answer).length > 4 ? ` (все ${sourcesOf(m.answer).length})` : '' }}<Icon name="arrow-right" :size="15" />
+                  </RouterLink>
+                </section>
                 <div v-if="!m.error && m.answer" class="ans__meta">
                   <time class="num" :datetime="new Date(m.doneAt ?? m.at).toISOString()">{{ timeOf(m.doneAt ?? m.at) }}</time>
+                  <span v-if="m.stopped" class="ans__stopped">остановлен</span>
                   <button type="button" class="ans__copy" :aria-label="copied === m.id ? 'Скопировано' : 'Копировать ответ'" :data-tip="copied === m.id ? undefined : 'Копировать ответ'" @click="copyAnswer(m.id, m.answer)">
                     <Icon :name="copied === m.id ? 'check' : 'copy'" :size="15" />{{ copied === m.id ? 'Скопировано' : 'Копировать' }}
                   </button>
+                  <template v-if="m.sid">
+                    <button type="button" class="ans__copy ans__rate" :class="{ 'is-on': m.rating === 'up' }" aria-label="Полезный ответ" :aria-pressed="m.rating === 'up'" data-tip="Полезный ответ" @click="rate(m.id, 'up', m.rating)"><Icon name="thumb-up" :size="15" /></button>
+                    <span class="ans__ratew">
+                      <button type="button" class="ans__copy ans__rate" :class="{ 'is-on': m.rating === 'down' }" aria-label="Ответ не подошёл" :aria-pressed="m.rating === 'down'" aria-haspopup="menu" :aria-expanded="rateOpen === m.id" data-tip="Ответ не подошёл" @click.stop="rate(m.id, 'down', m.rating)"><Icon name="thumb-down" :size="15" /></button>
+                      <Transition name="pop">
+                        <div v-if="rateOpen === m.id" class="menu ans__why" role="menu" @click.stop>
+                          <p class="ans__whyh">Что не так?</p>
+                          <button v-for="r in REASONS" :key="r" type="button" class="menu__item" role="menuitem" @click="rateDown(m.id, r)">{{ r }}</button>
+                        </div>
+                      </Transition>
+                    </span>
+                  </template>
                 </div>
               </UiLoad>
+              <button v-if="m.pending && m.sid" type="button" class="btn btn--ghost btn--sm ans__stop" @click="stopAnswer(run.id, m.id)"><span class="ans__sq" aria-hidden="true" />Остановить</button>
             </div>
           </div>
         </template>
@@ -569,6 +647,27 @@ const answerText = (a: unknown) => {
     </div>
 
     <div class="rv__dock">
+      <div v-if="isApi" ref="chatsWrap" class="chats">
+        <button type="button" class="chats__btn" aria-haspopup="menu" :aria-expanded="chats" :data-tip="chats ? undefined : 'Чаты этого разбора'" @click.stop="chats = !chats">
+          <Icon name="history" :size="15" /><span class="chats__t">{{ chatTitle }}</span><UiSpinner v-if="chatLoading[run.id]" :size="11" tone="current" /><Icon v-else name="chevron-down" :size="13" class="head__chev" :class="{ 'is-open': chats }" />
+        </button>
+        <button type="button" class="chats__new" aria-label="Новый чат" data-tip="Новый чат" @click="startChat"><Icon name="edit" :size="15" /></button>
+        <Transition name="pop">
+          <div v-if="chats" class="menu chats__pop" role="menu">
+            <button type="button" class="menu__item" role="menuitem" @click="startChat"><Icon name="edit" :size="16" />Новый чат</button>
+            <RouterLink v-if="chatCur" :to="{ path: '/run/' + encodeURIComponent(run.id) + '/sources', query: { thread: chatCur } }" class="menu__item" role="menuitem" @click="chats = false"><Icon name="book" :size="16" />Источники этого чата</RouterLink>
+            <div v-if="chatList.length" class="menu__sep" role="separator" />
+            <div v-for="t in chatList" :key="t.id" class="chats__row" :class="{ 'is-on': t.id === chatCur }">
+              <button type="button" class="menu__item menu__item--2 chats__pick" role="menuitem" @click="pickChat(t.id)">
+                <Icon :name="t.id === chatCur ? 'check' : 'chat'" :size="16" />
+                <span>{{ t.title }}<small>{{ t.running_message_id ? 'пишется ответ…' : `${t.questions} ${plural(t.questions, ['вопрос', 'вопроса', 'вопросов'])}` }}</small></span>
+              </button>
+              <button type="button" class="icon-btn chats__act" :aria-label="'Переименовать ' + t.title" data-tip="Переименовать" @click="renameChatAsk(t.id, t.title)"><Icon name="edit" :size="14" /></button>
+              <button type="button" class="icon-btn chats__act" :aria-label="'Удалить ' + t.title" data-tip="Удалить" @click="deleteChatAsk(t.id, t.title)"><Icon name="trash" :size="14" /></button>
+            </div>
+          </div>
+        </Transition>
+      </div>
       <FileComposer ask placeholder="Спросите о результатах или добавьте PDF" send-label="Добавить" @send="add" @ask="ask" />
     </div>
   </div>
@@ -640,6 +739,40 @@ const answerText = (a: unknown) => {
 .ans { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-content: start; gap: var(--s3); min-width: 0; }
 .ans__av { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--card); box-shadow: 0 0 0 1px var(--line); }
 .ans__body { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--s5); padding-top: 2px; }
+.srcb { display: grid; gap: var(--s3); padding: var(--s4) var(--s5); border-radius: var(--r); background: var(--card); box-shadow: 0 0 0 1px var(--line); }
+.srcb__h { font-size: var(--fs-sm); font-weight: 600; }
+.srcb__h span { margin-left: var(--s2); font-weight: 400; color: var(--muted); }
+.srcb__all { justify-self: start; font-size: var(--fs-sm); }
+.live { display: grid; gap: var(--s3); }
+.live__steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); font-size: var(--fs-sm); color: var(--muted); }
+.live__steps li { display: flex; align-items: center; gap: var(--s2); }
+.live__steps li.is-cur { color: var(--ink-2); }
+.live__text { color: var(--ink); line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; }
+.live__caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -2px; background: currentColor; animation: caret 1s steps(2) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+.ans__stop { justify-self: start; margin-top: var(--s2); }
+.ans__sq { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
+.ans__stopped { padding: 0 var(--s2); border-radius: var(--r-pill); background: var(--bg-2); }
+.ans__rate { padding: 0 var(--s1); }
+.ans__rate.is-on { color: var(--ink); background: var(--bg-2); }
+.ans__ratew { position: relative; display: inline-flex; }
+.ans__why { left: 0; bottom: calc(100% + var(--s1)); min-width: 200px; }
+.ans__whyh { padding: var(--s2) var(--s3) var(--s1); font-size: var(--fs-xs); color: var(--muted); }
+.chats { position: relative; display: flex; align-items: center; gap: var(--s1); margin: 0 0 var(--s2) var(--s1); }
+.chats__btn { display: inline-flex; align-items: center; gap: var(--s2); min-height: 30px; max-width: min(420px, 70vw); padding: 0 var(--s3); border-radius: var(--r-pill); font-size: var(--fs-sm); color: var(--muted); }
+.chats__btn:hover, .chats__new:hover { background: var(--bg-2); color: var(--ink); }
+.chats__t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chats__new { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: var(--muted); }
+.chats__pop { left: 0; bottom: calc(100% + var(--s1)); width: min(380px, calc(100vw - 32px)); max-height: 360px; overflow: auto; }
+.chats__row { display: flex; align-items: center; gap: 2px; border-radius: var(--r-sm); }
+.chats__row.is-on { background: var(--bg-2); }
+.chats__pick { flex: 1; min-width: 0; }
+.chats__pick > span { min-width: 0; }
+.chats__pick > span, .chats__pick small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chats__act { width: 28px; height: 28px; opacity: 0; }
+.chats__row:hover .chats__act, .chats__act:focus-visible { opacity: 1; }
+@media (hover: none) { .chats__act { opacity: 1; } }
+@media (max-width: 768px) { .chats__btn, .chats__new { min-height: 40px; } .chats__new { width: 40px; height: 40px; } }
 .ans__meta { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s3); font-size: var(--fs-xs); color: var(--muted); }
 .ans__copy { display: inline-flex; align-items: center; gap: var(--s1); min-height: 28px; padding: 0 var(--s2); margin-left: calc(-1 * var(--s1)); border-radius: var(--r-sm); color: var(--muted); }
 .ans__copy:hover { background: var(--bg-2); color: var(--ink); }

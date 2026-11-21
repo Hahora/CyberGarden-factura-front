@@ -8,7 +8,7 @@ import { isTableQuestion, tableAnswer, tableSuggestion } from './askTables'
 import { ragHasData, ragLoadAll } from './rag'
 import { fmtInt } from '../fmt'
 
-export interface CaseCite { pid: string; rid?: string; iid?: string; table?: string; row?: string; page?: string; label: string; domain?: 'rag' }
+export interface CaseCite { pid: string; rid?: string; iid?: string; table?: string; row?: string; page?: string; label: string; domain?: 'rag'; url?: string }
 export interface RagTableRow { cells: string[]; pid?: string; rid?: string; best?: boolean }
 export type CaseCard =
   | { kind: 'results'; title: string; rows: { pid: string; rid: string }[] }
@@ -19,6 +19,7 @@ export type CaseCard =
   | { kind: 'paper'; pid: string }
   | { kind: 'tableRows'; title: string; table: string; cols: string[]; rows: { pid: string; id: string; cells: string[] }[]; domain: 'solar' | 'rag' }
   | { kind: 'schema'; title: string; table: string; fields: { name: string; ru: string; required: boolean; desc: string; ref?: string }[] }
+  | { kind: 'fix'; title: string; domain?: 'solar' | 'rag'; items: { pid: string; rid: string; metric: string; current: number; suggested: number; unit?: string; reason?: string }[] }
 export interface CaseAnswer { text: string; cards: CaseCard[]; cites: CaseCite[]; suggestions: string[] }
 
 export function ruText(s: string): string {

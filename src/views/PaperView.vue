@@ -3,6 +3,7 @@ import { FEATURES } from '../features'
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '../components/Icon.vue'
+import IssueFix from '../components/IssueFix.vue'
 import UiSplit from '../components/UiSplit.vue'
 import UiEmpty from '../components/UiEmpty.vue'
 import UiLoad from '../components/UiLoad.vue'
@@ -629,6 +630,7 @@ const tone = (f: string) => (f === 'absorber' ? 'abs' : f.includes('contact') ? 
                           <Icon name="eye" :size="16" />Показать в PDF
                         </button>
                         <template v-if="stOf(i) === 'open'">
+                          <IssueFix :pid="pid" :iid="i.issue_id" :domain="domain ?? 'solar'" />
                           <button type="button" class="btn btn--ghost btn--sm" :data-tip="'Вы поправили число в статье или в данных — пометить замечание исправленным'" @click="resolve(i, 'fixed')">
                             <Icon name="check" :size="16" />Отметить исправленным
                           </button>

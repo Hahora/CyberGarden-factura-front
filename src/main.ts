@@ -21,6 +21,7 @@ const router = createRouter({
     { path: '/paper/:domain(solar|rag)/:pid', component: () => import('./views/PaperView.vue'), props: (r) => ({ pid: r.params.pid, domain: r.params.domain }) },
     { path: '/paper/:pid', component: () => import('./views/PaperView.vue'), props: (r) => ({ pid: r.params.pid, domain: 'solar' }) },
     { path: '/run/:id(demo-dev|demo-rag)', redirect: '/app' },
+    { path: '/run/:id/sources', component: () => import('./views/SourcesView.vue'), props: true, meta: { title: 'Источники' } },
     { path: '/run/:id', component: () => import('./views/RunView.vue'), props: true },
     { path: '/c/:id', component: () => import('./views/ChatView.vue'), props: true, beforeEnter: () => FEATURES.chat || '/app' },
     { path: '/p/:id', component: () => import('./views/ProjectView.vue'), props: true, beforeEnter: () => FEATURES.projects || '/app' },

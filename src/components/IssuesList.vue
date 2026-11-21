@@ -12,6 +12,7 @@ import {
   ragReviewMark, ragIsRejected, ragConfigNameOf,
 } from '../case/rag'
 import { toast } from '../store'
+import IssueFix from './IssueFix.vue'
 import { ruText } from '../case/ask'
 
 const props = withDefaults(defineProps<{
@@ -161,6 +162,7 @@ watch(() => props.selected, async (v) => {
             <div class="it__acts">
               <button type="button" class="btn btn--soft btn--sm" @click="show(i)"><Icon name="eye" :size="16" />Показать в PDF</button>
               <template v-if="isOpen(i)">
+                <IssueFix :pid="i.publication_id" :iid="i.issue_id" :domain="domain" />
                 <button type="button" class="btn btn--ghost btn--sm" :data-tip="'Вы поправили число в статье или в данных — пометить замечание исправленным'" @click="mark(i, 'fixed')"><Icon name="check" :size="16" />Отметить исправленным</button>
                 <button type="button" class="btn btn--ghost btn--sm" :data-tip="'Проверили: в статье всё верно, программа ошиблась — закрыть замечание'" @click="mark(i, 'ok')">Это не ошибка</button>
               </template>

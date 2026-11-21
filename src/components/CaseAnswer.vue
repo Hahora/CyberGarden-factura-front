@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Icon from './Icon.vue'
 import IssuesList from './IssuesList.vue'
 import {
-  CLASS_RU, deviceName, fmtValue, labelOfField, metricLabel, paperPath, placeOf, result, reviewMark, valueClass, valueOf,
+  CLASS_RU, deviceName, fmtValue, labelOfField, metricLabel, paperPath, placeOf, result, reviewMark, reviewOf, setReview, unitRu, valueClass, valueOf,
   type Domain, type ResultRow,
 } from '../case'
 import { ragPublication, ragResult, ragSummaryOf } from '../case/rag'
@@ -12,6 +12,7 @@ import { openInSubmission, TAB_RU } from '../case/submissionFocus'
 import { compareTable, paperSummary, type CaseAnswer, type CaseCard, type RagTableRow } from '../case/ask'
 import { plural } from '../search'
 import { fmtInt } from '../fmt'
+import { toast } from '../store'
 
 const props = withDefaults(defineProps<{ answer: CaseAnswer; animate?: boolean; asked?: string[] }>(), { animate: true, asked: () => [] })
 const emit = defineEmits<{ ask: [q: string] }>()
@@ -67,7 +68,8 @@ const refText = (rid: string, page?: string) => ['results', rid, page && 'стр
 function openCite(n: number) {
   tip.value = null
   const c = props.answer.cites[n - 1]
-  if (!c) return
+  if (c?.url) { window.open(c.url, '_blank', 'noopener'); return }
+  if (!c || !c.pid) return
   const d: Domain = c.domain ?? 'solar'
   if (c.table && c.row) return openRef(c.table, c.row, c.pid, d)
   if (c.rid) void openResult(c.pid, c.rid, d)
@@ -96,8 +98,10 @@ type View =
   | { kind: 'ragTable'; title: string; cols: string[]; rows: RagTableRow[]; note?: string }
   | { kind: 'ragPaper'; pid: string; title: string; year: string; results: number; configurations: number; issues: number }
   | { kind: 'paper'; s: ReturnType<typeof paperSummary> }
-  | Extract<CaseCard, { kind: 'tableRows' | 'schema' }>
-const views = computed<View[]>(() => props.answer.cards.map((c: CaseCard): View => {
+  | Extract<CaseCard, { kind: 'tableRows' | 'schema' | 'fix' }>
+const KNOWN = new Set(['results', 'compare', 'issues', 'ragTable', 'tableRows', 'schema', 'ragPaper', 'paper', 'fix'])
+const views = computed<View[]>(() => props.answer.cards.filter((c) => c && KNOWN.has(c.kind) && !(c.kind === 'compare' && (c as { domain?: string }).domain === 'rag') && !((c.kind === 'paper' || c.kind === 'ragPaper') && !c.pid)).map((c: CaseCard): View => {
+  if (c.kind === 'fix') return c
   if (c.kind === 'results') return { kind: 'results', title: c.title, rows: c.rows.map((x) => result(x.pid, x.rid)).filter((r): r is ResultRow => !!r) }
   if (c.kind === 'compare') return { ...c, t: compareTable(c.pids, c.metrics) }
   if (c.kind === 'issues') return { kind: 'issues', title: c.title, items: c.items, domain: c.domain ?? 'solar' }
@@ -108,6 +112,14 @@ const views = computed<View[]>(() => props.answer.cards.map((c: CaseCard): View 
   }
   return { kind: 'paper', s: paperSummary(c.pid) }
 }))
+const fixVal = (v: number, unit?: string) => `${String(+Number(v).toPrecision(6)).replace('.', ',')}${unit ? ' ' + unitRu(unit) : ''}`
+const fixDom = (v: Extract<View, { kind: 'fix' }>): Domain => (v.domain === 'rag' ? 'rag' : 'solar')
+const isApplied = (v: Extract<View, { kind: 'fix' }>, it: { pid: string; rid: string; suggested: number }) => reviewOf(it.pid, it.rid, fixDom(v)).corrected === it.suggested
+function applyFix(v: Extract<View, { kind: 'fix' }>, it: { pid: string; rid: string; metric: string; suggested: number; unit?: string }) {
+  const d = fixDom(v)
+  const prev = setReview(it.pid, it.rid, { status: 'accepted', corrected: it.suggested }, d)
+  toast(`Исправлено: ${metricLabel(it.metric)} ${it.pid} → ${fixVal(it.suggested, it.unit)}`, { label: 'Вернуть', run: () => setReview(it.pid, it.rid, prev, d) })
+}
 const visible = <T,>(list: T[], i: number) => (expanded.has(i) ? list : list.slice(0, LIMIT))
 const devLabel = (r: ResultRow) => (r.device_id ? deviceName(r.publication_id, r.device_id) : r.result_origin === 'cited' ? 'из другой работы' : '—')
 const isTop = (v: Extract<View, { kind: 'compare' }>, i: number, j: number) => {
@@ -263,6 +275,25 @@ const suggestions = computed(() => {
           </ul>
         </template>
 
+        <template v-else-if="v.kind === 'fix'">
+          <h3 class="ac__title">{{ v.title || 'Предложенные исправления' }}<span class="ac__n num">{{ fmtInt(v.items.length) }}</span></h3>
+          <p class="ac__meta">Сервис сам ничего не меняет — проверьте и примените нужное.</p>
+          <ul class="fix" role="list">
+            <li v-for="it in v.items" :key="it.pid + it.rid" class="fix__r">
+              <div class="fix__main">
+                <p class="fix__h">
+                  <b>{{ metricLabel(it.metric) }}</b>
+                  <button type="button" class="ac__ref" @click="openResult(it.pid, it.rid, fixDom(v))">{{ it.pid }} · {{ it.rid }}</button>
+                </p>
+                <p class="fix__v num"><s>{{ fixVal(it.current, it.unit) }}</s><Icon name="arrow-right" :size="14" /><b>{{ fixVal(it.suggested, it.unit) }}</b></p>
+                <p v-if="it.reason" class="fix__why">{{ it.reason }}</p>
+              </div>
+              <span v-if="isApplied(v, it)" class="fix__ok"><Icon name="check" :size="15" />Применено</span>
+              <button v-else type="button" class="btn btn--soft btn--sm" @click="applyFix(v, it)"><Icon name="check" :size="15" />Применить</button>
+            </li>
+          </ul>
+        </template>
+
         <template v-else-if="v.kind === 'ragPaper'">
           <div class="ac__pp"><span class="ac__code">{{ v.pid }}</span><span v-if="v.year" class="ac__meta">{{ v.year }}</span></div>
           <h3 class="ac__ptitle">{{ v.title }}</h3>
@@ -358,6 +389,17 @@ const suggestions = computed(() => {
 .ac__legend { font-size: var(--fs-xs); color: var(--muted); line-height: 1.45; }
 .ac__legend .best { font-weight: 500; color: var(--ink-2); }
 .ac__more { justify-self: start; }
+.fix { list-style: none; margin: 0; padding: 0; display: grid; }
+.fix__r { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s2) var(--s4); padding: var(--s3) 0; }
+.fix__r + .fix__r { border-top: 1px solid var(--line); }
+.fix__main { min-width: 0; display: grid; gap: 2px; }
+.fix__h { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); }
+.fix__v { display: inline-flex; align-items: center; gap: var(--s2); color: var(--muted); }
+.fix__v s { text-decoration-color: var(--faint); }
+.fix__v b { color: var(--ink); font-weight: 600; }
+.fix__why { font-size: var(--fs-sm); color: var(--muted); line-height: 1.5; }
+.fix__ok { display: inline-flex; align-items: center; gap: var(--s1); font-size: var(--fs-sm); color: var(--green, var(--ink-2)); }
+@media (max-width: 768px) { .fix__r { grid-template-columns: minmax(0, 1fr); } .fix__r .btn { justify-self: start; } }
 .ac__wrap { white-space: normal !important; min-width: 12em; max-width: 280px; }
 
 .ac__pp { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); }

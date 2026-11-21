@@ -7,6 +7,7 @@ import { isReady, isRemoteScope, paperOf, pdfApiUrl, refreshPaper, setEditsHook,
 import type { ServerIssueState, ServerReview } from '../api/edits'
 import { toast } from '../store'
 import { isApi } from '../config'
+import { dropFixes } from '../api/fixes'
 
 export * from './types'
 export * from './ragData'
@@ -135,7 +136,9 @@ function restoreReview(x: Pending) {
   if (x.prev.status === 'new' && x.prev.corrected == null) delete b[k]
   else b[k] = x.prev
 }
+export const refreshEdits = (scope: string, domain: Domain, pid: string) => afterEdit(scope, domain, pid)
 function afterEdit(scope: string, domain: Domain, pid: string) {
+  dropFixes(scope, pid)
   if (domain === 'rag') ragRefreshEdits(pid, scope)
   else refreshPaper(scope, pid)
   void import('../api/runs').then((m) => m.dropSummary(scope))

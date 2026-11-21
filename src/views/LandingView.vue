@@ -233,6 +233,7 @@ onBeforeUnmount(() => {
             <p class="hero__lead">Загрузите научные PDF — получите таблицы значений со ссылкой на место в статье. Солнечные элементы и RAG</p>
             <div class="hero__btns">
               <a class="btn btn--white" href="/app" @click.prevent="upload">Загрузить PDF</a>
+              <a class="btn btn--glass" href="#product" @click.prevent="go('product')"><span class="play" aria-hidden="true" />Смотреть демо</a>
             </div>
           </div>
 
@@ -407,6 +408,10 @@ onBeforeUnmount(() => {
 .btn:hover { transform: translateY(-2px); }
 .btn:active { transform: translateY(0) scale(.98); }
 .btn--white { background: #fff; color: var(--ink) !important; box-shadow: 0 10px 30px -12px rgba(255, 255, 255, .45); }
+.btn--glass { color: #fff !important; border-color: rgba(255, 255, 255, .32); background: rgba(255, 255, 255, .06); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.btn--glass:hover { border-color: rgba(255, 255, 255, .6); background: rgba(255, 255, 255, .12); }
+.btn--glass .play { width: 26px; height: 26px; margin-left: -10px; border-radius: 50%; background: #fff; position: relative; flex: none; }
+.btn--glass .play::after { content: ''; position: absolute; left: 10px; top: 8px; border-left: 8px solid #0b0d12; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
 .btn--white:hover { box-shadow: 0 16px 40px -12px rgba(255, 255, 255, .6); }
 .btn--ghost { color: var(--on-dark); border-color: rgba(255, 255, 255, .55); }
 .btn--ghost:hover { border-color: #fff; background: rgba(255, 255, 255, .06); }

@@ -22,6 +22,8 @@ import { FEATURES } from '../features'
 import { isApi } from '../config'
 import { logout as apiLogout } from '../api/auth'
 import { openIssuesOf, paperPath, publication, ragPublication, type Domain } from '../case'
+import { ragTitleIn } from '../case/ragData'
+import { isRemoteScope, paperOf as apiPaperOf } from '../api/papers'
 import { deleteRun, inbox, renameRun, runOf, runPapers, sortedRuns, togglePinRun } from '../case/runs'
 import { downloadRunSubmission, submissionToast } from '../case/export'
 
@@ -200,7 +202,10 @@ const runLabel = (r: { id: string; title: string; createdAt?: number; created_at
   return same && Number.isFinite(t) ? `${r.title}, ${new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : r.title
 }
 const runPapersOf = (id: string) => (runOf(id)?.files ?? []).filter((f) => f.reason !== 'не PDF')
-const paperTitle = (pid: string, domain: Domain = 'solar') => (domain === 'rag' ? ragPublication(pid) : publication(pid))?.title ?? ''
+const paperTitle = (pid: string, domain: Domain = 'solar', runId = '') => {
+  if (isApi && runId && isRemoteScope(runId)) return domain === 'rag' ? ragTitleIn(pid, runId) : (apiPaperOf(runId, pid)?.publication?.title ?? '')
+  return (domain === 'rag' ? ragPublication(pid) : publication(pid))?.title ?? ''
+}
 const openN = (pid: string, domain: Domain = 'solar') => openIssuesOf(pid, domain).length
 const openTip = (pid: string, domain: Domain = 'solar') => { const n = openN(pid, domain); return `Открытых замечаний: ${n} — нужно проверить` }
 async function renameRunAsk(id: string) {
@@ -431,9 +436,9 @@ function doMove(id: string, projectId: string | null) {
                 v-for="f in (subExpanded(r.id) ? runPapersOf(r.id) : runPapersOf(r.id).slice(0, SUB_MAX))" :key="f.id" :to="{ path: paperPath(f.id, r.domain), query: { run: r.id } }" class="row row--item row--chat row--paper"
                 :class="{ 'is-active': activePid === f.id, 'is-dim': f.status === 'out' || f.status === 'error' }"
               >
-                <template v-if="paperTitle(f.id, r.domain)">
+                <template v-if="paperTitle(f.id, r.domain, r.id)">
                   <span class="row__code num">{{ f.id }}</span>
-                  <span class="row__t row__sub" :data-tip="paperTitle(f.id, r.domain)">{{ paperTitle(f.id, r.domain) }}</span>
+                  <span class="row__t row__sub" :data-tip="paperTitle(f.id, r.domain, r.id)">{{ paperTitle(f.id, r.domain, r.id) }}</span>
                 </template>
                 <span v-else class="row__t row__sub" :data-tip="fileLabel(f)">{{ fileLabel(f) }}</span>
                 <span v-if="openN(f.id, r.domain)" class="dot dot--warn row__issue" role="img" :data-tip="openTip(f.id, r.domain)" :aria-label="openTip(f.id, r.domain)" />
@@ -607,7 +612,7 @@ function doMove(id: string, projectId: string | null) {
               </div>
               <div v-if="isRunOpen(r.id)" class="sub sb-hist__sub">
                 <button v-for="f in runPapersOf(r.id)" :key="f.id" class="menu__item" role="menuitem" :class="{ 'is-active': activePid === f.id }" @click="hist = null; go({ path: paperPath(f.id, r.domain), query: { run: r.id } })">
-                  <span class="row__code num">{{ f.id }}</span><span class="sb-hist__t">{{ paperTitle(f.id, r.domain) }}</span>
+                  <span class="row__code num">{{ f.id }}</span><span class="sb-hist__t">{{ paperTitle(f.id, r.domain, r.id) }}</span>
                 </button>
               </div>
             </template>

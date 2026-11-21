@@ -10,5 +10,12 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: { '/api': { target: env.VITE_API_PROXY || 'http://localhost:8000', changeOrigin: true } },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          assetFileNames: (info) => ((info.names?.[0] ?? info.name ?? '').endsWith('.mjs') ? 'assets/[name]-[hash].js' : 'assets/[name]-[hash][extname]'),
+        },
+      },
+    },
   }
 })

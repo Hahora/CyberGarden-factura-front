@@ -1,6 +1,6 @@
 import { shallowReactive } from 'vue'
 import { isApi } from '../config'
-import { adoptEdits } from '../api/papers'
+import { adoptEdits, setDropHook } from '../api/papers'
 import type { ServerIssueState, ServerReview } from '../api/edits'
 import { RAG_COLUMNS, RAG_PUBLICATIONS, RAG_SUMMARY } from './ragSummary'
 import type {
@@ -27,28 +27,55 @@ interface ApiRagSummary {
 type Page<T> = { data: T[]; total: number; next_cursor: string | null }
 const apiSum = shallowReactive<Record<string, ApiRagSummary | 'missing'>>({})
 const sumPending = new Map<string, Promise<ApiRagSummary | undefined>>()
+const sumFailedAt = new Map<string, number>()
 const api = () => import('../api/client')
+const LIMIT = 4
+let active = 0
+const waiting: (() => void)[] = []
+function slot<T>(fn: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const run = () => {
+      active++
+      fn().then(resolve, reject).finally(() => { active--; waiting.shift()?.() })
+    }
+    if (active < LIMIT) run()
+    else waiting.push(run)
+  })
+}
 function loadSum(pid: string, run: string): Promise<ApiRagSummary | undefined> {
   const k = K(pid, run)
   const hit = apiSum[k]
   if (hit) return Promise.resolve(hit === 'missing' ? undefined : hit)
+  if (Date.now() - (sumFailedAt.get(k) ?? 0) < 5000) return Promise.resolve(undefined)
   let p = sumPending.get(k)
   if (!p) {
-    p = api()
-      .then(({ get }) => get<ApiRagSummary>(`/papers/rag/${encodeURIComponent(pid)}`, { run }, { silent: true }))
-      .then((s) => { adoptEdits(run, 'rag', pid, s.reviews, s.issue_states); apiSum[k] = s; return s }, () => { apiSum[k] = 'missing'; return undefined })
+    p = slot(() => api().then(({ get }) => get<ApiRagSummary>(`/papers/rag/${encodeURIComponent(pid)}`, { run }, { silent: true })))
+      .then(
+        (s) => { adoptEdits(run, 'rag', pid, s.reviews, s.issue_states); apiSum[k] = s; sumFailedAt.delete(k); return s },
+        async (e: unknown) => {
+          const { ApiError } = await api()
+          if (e instanceof ApiError && e.status === 404) apiSum[k] = 'missing'
+          else sumFailedAt.set(k, Date.now())
+          return undefined
+        },
+      )
       .finally(() => sumPending.delete(k))
     sumPending.set(k, p)
   }
   return p
 }
-function sumOf(pid: string): ApiRagSummary | undefined {
-  const run = runOfScope()
+function sumIn(pid: string, run: string): ApiRagSummary | undefined {
   if (!run) return undefined
   const hit = apiSum[K(pid, run)]
   if (!hit) void loadSum(pid, run)
   return hit && hit !== 'missing' ? hit : undefined
 }
+const sumOf = (pid: string) => sumIn(pid, runOfScope())
+export const ragTitleIn = (pid: string, run: string) => sumIn(pid, run)?.publication?.title ?? ''
+setDropHook((run, pid) => {
+  for (const k of Object.keys(apiSum)) if (k.startsWith(run + '|') && (!pid || k === K(pid, run))) delete apiSum[k]
+  for (const k of [...sumFailedAt.keys()]) if (k.startsWith(run + '|') && (!pid || k === K(pid, run))) sumFailedAt.delete(k)
+})
 
 const EMPTY: RagPaperSummary = { results: 0, configurations: 0, datasets: 0, tasks: 0, experiments: 0, issues: 0, metrics: [], scan: false }
 export const ragPublications = (): PublicationRow[] => RAG_PUBLICATIONS

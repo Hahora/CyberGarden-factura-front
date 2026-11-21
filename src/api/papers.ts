@@ -79,7 +79,10 @@ export function refreshPaper(run: string, pid: string) {
 }
 export const paperLoaded = (run: string, pid: string) => ragRuns.has(run) || !isReady(run, pid) || cache.has(key(run, pid))
 export const paperFailed = (run: string, pid: string) => cache.get(key(run, pid)) === 'missing'
+let dropHook: (run: string, pid?: string) => void = () => {}
+export const setDropHook = (fn: (run: string, pid?: string) => void) => { dropHook = fn }
 export function dropPaper(run: string, pid?: string) {
   for (const k of [...cache.keys()]) if (k.startsWith(run + SEP) && (!pid || k === key(run, pid))) cache.delete(k)
+  dropHook(run, pid)
 }
 export const pdfApiUrl = (pid: string, domain: 'solar' | 'rag' = 'solar', run?: string) => `${API_URL}/papers/${domain}/${encodeURIComponent(pid)}/pdf${run ? '?run=' + encodeURIComponent(run) : ''}`

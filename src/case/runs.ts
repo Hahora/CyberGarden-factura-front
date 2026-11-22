@@ -434,7 +434,7 @@ export function runSummary(id: string): RunSummary {
   return {
     files: fs.length,
     papers: fs.filter((f) => f.reason !== 'не PDF').length,
-    inScope: fs.filter((f) => f.status === 'done').length,
+    inScope: fs.filter((f) => f.status === 'done' || f.status === 'ocr').length,
     out: fs.filter((f) => f.status === 'out').length,
     nodata: fs.filter((f) => f.status === 'nodata').length,
     errors: fs.filter((f) => f.status === 'error').length,
@@ -490,7 +490,7 @@ function ragRunSummary(id: string, pids: string[]): RunSummary {
   return {
     files: fs.length,
     papers: fs.filter((f) => f.reason !== 'не PDF').length,
-    inScope: fs.filter((f) => f.status === 'done').length,
+    inScope: fs.filter((f) => f.status === 'done' || f.status === 'ocr').length,
     out: fs.filter((f) => f.status === 'out').length,
     nodata: fs.filter((f) => f.status === 'nodata').length,
     errors: fs.filter((f) => f.status === 'error').length,

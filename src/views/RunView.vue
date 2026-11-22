@@ -145,10 +145,10 @@ function line(fs: RunFile[]) {
   const n = fs.length
   const c = (st: RunFile['status']) => fs.filter((f) => f.status === st).length
   const parts = [`${n} ${plural(n, ['файл', 'файла', 'файлов'])}`]
-  if (c('done')) parts.push(`${c('done')} по теме`)
+  if (c('done') + c('ocr')) parts.push(`${c('done') + c('ocr')} по теме`)
   if (c('out')) parts.push(`${c('out')} не по теме`)
   if (c('nodata')) parts.push(`${c('nodata')} без результатов`)
-  if (c('ocr')) parts.push(`${c('ocr')} ${plural(c('ocr'), ['скан', 'скана', 'сканов'])} без текста`)
+  if (c('ocr')) parts.push(`${c('ocr')} распознано OCR`)
   if (c('error')) parts.push(`${c('error')} ${plural(c('error'), ['ошибка', 'ошибки', 'ошибок'])}`)
   return parts.join(' · ')
 }
@@ -158,8 +158,8 @@ const open = ref<Record<string, boolean>>({})
 const ST: Record<RunFile['status'], string> = {
   queued: 'в очереди', running: 'разбор', done: 'готово', out: 'не по теме', ocr: 'скан, распознано OCR', error: 'ошибка', nodata: 'нет результатов',
 }
-const ICON: Partial<Record<RunFile['status'], string>> = { done: 'check', nodata: 'info', out: 'info', error: 'warn', ocr: 'warn' }
-const canOpen = (f: RunFile) => f.status === 'done' || f.status === 'out' || f.status === 'nodata'
+const ICON: Partial<Record<RunFile['status'], string>> = { done: 'check', nodata: 'info', out: 'info', error: 'warn', ocr: 'check' }
+const canOpen = (f: RunFile) => f.status === 'done' || f.status === 'ocr' || f.status === 'out' || f.status === 'nodata'
 const outFiles = computed(() => (running.value ? [] : (run.value?.files ?? []).filter((f) => f.status === 'out')))
 const otherDomain = computed(() => (run.value?.domain === 'rag' ? 'solar' : 'rag'))
 const otherName = computed(() => (otherDomain.value === 'rag' ? 'RAG' : 'солнечные элементы'))
@@ -792,9 +792,8 @@ const answerText = (a: unknown) => {
 .fr.is-link { cursor: pointer; transition: background-color var(--t-fast) ease; }
 .fr.is-link:hover { background: var(--bg); }
 .fr__st { width: 16px; flex: none; display: grid; place-items: center; color: var(--muted); }
-.fr--done .fr__st { color: var(--green); }
+.fr--done .fr__st, .fr--ocr .fr__st { color: var(--green); }
 .fr--error .fr__st { color: var(--red); }
-.fr--ocr .fr__st { color: var(--amber); }
 .fr__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line-2); }
 .fr__id { flex: none; width: 52px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fr__t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }

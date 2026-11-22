@@ -29,7 +29,7 @@ const apiSum = shallowReactive<Record<string, ApiRagSummary | 'missing'>>({})
 const sumPending = new Map<string, Promise<ApiRagSummary | undefined>>()
 const sumFailedAt = new Map<string, number>()
 const api = () => import('../api/client')
-const LIMIT = 4
+const LIMIT = 6
 let active = 0
 const waiting: (() => void)[] = []
 function slot<T>(fn: () => Promise<T>): Promise<T> {
@@ -42,22 +42,40 @@ function slot<T>(fn: () => Promise<T>): Promise<T> {
     else waiting.push(run)
   })
 }
-function loadSum(pid: string, run: string): Promise<ApiRagSummary | undefined> {
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const tries = new Map<string, number>()
+function later(k: string, fn: () => void) {
+  const n = (tries.get(k) ?? 0) + 1
+  if (n > 5) return
+  tries.set(k, n)
+  setTimeout(fn, 3000 * n)
+}
+async function fetchSum(pid: string, run: string): Promise<ApiRagSummary | undefined> {
+  const { get, ApiError } = await api()
+  for (let i = 0; ; i++) {
+    try {
+      return await slot(() => get<ApiRagSummary>(`/papers/rag/${encodeURIComponent(pid)}`, { run }, { silent: true }))
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return undefined
+      if (i >= 2) throw e
+      await wait(700 * (i + 1))
+    }
+  }
+}
+function loadSum(pid: string, run: string, force = false): Promise<ApiRagSummary | undefined> {
   const k = K(pid, run)
   const hit = apiSum[k]
   if (hit) return Promise.resolve(hit === 'missing' ? undefined : hit)
-  if (Date.now() - (sumFailedAt.get(k) ?? 0) < 5000) return Promise.resolve(undefined)
+  if (!force && Date.now() - (sumFailedAt.get(k) ?? 0) < 5000) return Promise.resolve(undefined)
   let p = sumPending.get(k)
   if (!p) {
-    p = slot(() => api().then(({ get }) => get<ApiRagSummary>(`/papers/rag/${encodeURIComponent(pid)}`, { run }, { silent: true })))
+    p = fetchSum(pid, run)
       .then(
-        (s) => { adoptEdits(run, 'rag', pid, s.reviews, s.issue_states); apiSum[k] = s; sumFailedAt.delete(k); return s },
-        async (e: unknown) => {
-          const { ApiError } = await api()
-          if (e instanceof ApiError && e.status === 404) apiSum[k] = 'missing'
-          else sumFailedAt.set(k, Date.now())
-          return undefined
+        (s) => {
+          if (!s) { apiSum[k] = 'missing'; return undefined }
+          adoptEdits(run, 'rag', pid, s.reviews, s.issue_states); apiSum[k] = s; sumFailedAt.delete(k); tries.delete(k); return s
         },
+        () => { sumFailedAt.set(k, Date.now()); later(k, () => void loadSum(pid, run, true)); return undefined },
       )
       .finally(() => sumPending.delete(k))
     sumPending.set(k, p)
@@ -80,7 +98,7 @@ setDropHook((run, pid) => {
 const EMPTY: RagPaperSummary = { results: 0, configurations: 0, datasets: 0, tasks: 0, experiments: 0, issues: 0, metrics: [], scan: false }
 export const ragPublications = (): PublicationRow[] => RAG_PUBLICATIONS
 export const ragPublication = (pid: string): PublicationRow | undefined =>
-  runOfScope() ? sumOf(pid)?.publication : RAG_PUBLICATIONS.find((p) => p.publication_id === pid)
+  runOfScope() ? (sumOf(pid)?.publication ?? (cache[K(pid)] as (RagTables & { publication?: PublicationRow }) | undefined)?.publication) : RAG_PUBLICATIONS.find((p) => p.publication_id === pid)
 export const ragHasData = (pid: string) => (runOfScope() ? true : pid in RAG_SUMMARY)
 export const ragInScope = (pid: string) => ragPublication(pid)?.in_scope !== 'false'
 export function ragSummaryOf(pid: string): RagPaperSummary {
@@ -150,7 +168,7 @@ function put(k: string, t: RagTables) {
 const ROW_TABLES = ['configurations', 'datasets', 'tasks', 'experiments', 'results'] as const
 type TablesResp = { tables?: Record<string, Page<unknown>> }
 async function fetchApi(pid: string, run: string): Promise<RagTables> {
-  const s = await loadSum(pid, run)
+  const s = await loadSum(pid, run, true)
   if (!s) throw new Error('Статья не найдена')
   const { get } = await api()
   const path = `/papers/rag/${encodeURIComponent(pid)}`
@@ -170,7 +188,8 @@ async function fetchApi(pid: string, run: string): Promise<RagTables> {
   return {
     configurations: out.configurations as RagConfigRow[], datasets: out.datasets as RagDatasetRow[], tasks: out.tasks as RagTaskRow[],
     experiments: out.experiments as RagExperimentRow[], results: out.results as RagResultRow[], issues: s.issues ?? [],
-  }
+    publication: s.publication,
+  } as RagTables
 }
 async function fetchLocal(pid: string): Promise<RagTables> {
   const r = await fetch(`/case/rag/${encodeURIComponent(pid)}.json`)
@@ -214,7 +233,7 @@ export function ragLoad(pid: string): Promise<void> {
   if (!p) {
     p = (run ? fetchApi(pid, run) : fetchLocal(pid))
       .then((t) => put(k, t))
-      .catch((e: unknown) => { failed[k] = e instanceof Error ? e.message : 'ошибка загрузки' })
+      .catch((e: unknown) => { failed[k] = e instanceof Error ? e.message : 'ошибка загрузки'; if (run) later('t:' + k, () => { delete failed[k]; void ragLoad(pid) }) })
       .finally(() => { pending.delete(k) })
     pending.set(k, p)
   }

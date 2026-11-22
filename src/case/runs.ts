@@ -378,7 +378,7 @@ export function stopRun(id: string, quiet = false) {
   if (!quiet) pump()
 }
 
-const FINISHED: FileStatus[] = ['done', 'out']
+const FINISHED: FileStatus[] = ['done', 'ocr', 'out']
 export const runPapers = (id: string): string[] =>
   (runOf(id)?.files ?? []).filter((f) => f.hasData && FINISHED.includes(f.status)).map((f) => f.id)
 export const runPapersInScope = (id: string): string[] => {
